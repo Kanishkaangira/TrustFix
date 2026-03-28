@@ -260,9 +260,7 @@ const AiChat = ({ navigation }) => {
           <Text style={s.backArrow}>‹</Text>
         </TouchableOpacity>
         <View style={s.headerCenter}>
-          <View style={s.headerIconBox}>
-            <Text style={{ fontSize: 17 }}>🤖</Text>
-          </View>
+         
           <View>
             <Text style={s.headerTitle}>AI Diagnosis</Text>
             <View style={s.headerStatusRow}>
