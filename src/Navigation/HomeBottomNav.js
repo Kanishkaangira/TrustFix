@@ -1,3 +1,4 @@
+// src/Navigation/HomeBottomNav.js
 import React from 'react';
 import {
   View,
@@ -7,17 +8,15 @@ import {
   Platform,
 } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { useNavigationState } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import Home from '../Screens/Home';
-import AiChat from '../Screens/AiChat';
+import Home    from '../Screens/Home';
+import AiChat  from '../Screens/AiChat';
 import Profile from '../Screens/Profile';
 import Booking from '../Screens/Booking';
 
 const Tab = createBottomTabNavigator();
 
-// ─── Tokens ───────────────────────────────────────────────────
 const C = {
   coral:     '#FF6B35',
   coralPale: '#FFF0EB',
@@ -27,7 +26,6 @@ const C = {
   white:     '#FFFFFF',
 };
 
-// ─── Tab definitions ──────────────────────────────────────────
 const TABS = [
   { name: 'Home',    icon: 'home-variant-outline' },
   { name: 'AI Chat', icon: 'robot-outline'        },
@@ -35,19 +33,24 @@ const TABS = [
   { name: 'Profile', icon: 'account-outline'      },
 ];
 
-// ─── Custom Tab Bar ───────────────────────────────────────────
 const CustomTabBar = ({ state, navigation }) => {
-  // Read the current booking step from navigation params
-  // When step > 1, hide the tab bar
+  const currentRouteName = state.routes[state.index]?.name;
+
+  // ── Booking: hide when past step 1 ────────────────────────────────────────
   const bookingRoute = state.routes.find(r => r.name === 'Booking');
   const currentStep  = bookingRoute?.params?.currentStep ?? 1;
-  const isBookingTab = state.routes[state.index]?.name === 'Booking';
+  const isOnBooking  = currentRouteName === 'Booking';
 
-  // Hide bar when user is on Booking tab AND past step 1
-  if (isBookingTab && currentStep > 1) {
-    return null; // completely unmount the bar
-  }
+  if (isOnBooking && currentStep > 1) return null;
 
+  // ── Profile: hide when on any sub-screen (not 'main') ─────────────────────
+  const profileRoute  = state.routes.find(r => r.name === 'Profile');
+  const profileScreen = profileRoute?.params?.profileScreen ?? 'main';
+  const isOnProfile   = currentRouteName === 'Profile';
+
+  if (isOnProfile && profileScreen !== 'main') return null;
+
+  // ── Render tab bar ─────────────────────────────────────────────────────────
   return (
     <View style={styles.wrapper}>
       <View style={styles.bar}>
@@ -57,8 +60,8 @@ const CustomTabBar = ({ state, navigation }) => {
 
           const onPress = () => {
             const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
+              type:              'tabPress',
+              target:            route.key,
               canPreventDefault: true,
             });
             if (!isFocused && !event.defaultPrevented) {
@@ -74,7 +77,7 @@ const CustomTabBar = ({ state, navigation }) => {
               style={styles.tabItem}
             >
               <View style={[styles.indicator, isFocused && styles.indicatorActive]} />
-              <View style={[styles.iconChip, isFocused && styles.iconChipActive]}>
+              <View style={[styles.iconChip,   isFocused && styles.iconChipActive]}>
                 <Icon
                   name={tab.icon}
                   size={22}
@@ -92,7 +95,6 @@ const CustomTabBar = ({ state, navigation }) => {
   );
 };
 
-// ─── Navigator ────────────────────────────────────────────────
 const HomeBottomNav = () => (
   <Tab.Navigator
     tabBar={(props) => <CustomTabBar {...props} />}
@@ -107,7 +109,6 @@ const HomeBottomNav = () => (
 
 export default HomeBottomNav;
 
-// ─── Styles ───────────────────────────────────────────────────
 const styles = StyleSheet.create({
   wrapper: {
     position:        'absolute',
