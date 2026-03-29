@@ -23,8 +23,8 @@ const ADDRESSES = [
 ];
 
 const AddBtn = () => (
-  <TouchableOpacity activeOpacity={0.7}>
-    <Text style={{ color: PC.white, fontWeight: '700', fontSize: 14 }}>+ Add</Text>
+  <TouchableOpacity activeOpacity={0.7} style={styles.addBtn}>
+    <Text style={styles.addBtnText}>+ Add</Text>
   </TouchableOpacity>
 );
 
@@ -87,4 +87,17 @@ const styles = StyleSheet.create({
   address: { fontSize: 12, color: PC.muted, lineHeight: 17 },
   moreBtn: { gap: 3, padding: 4 },
   moreDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: PC.muted },
+  addBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  addBtnText: {
+    color: PC.white,
+    fontWeight: '700',
+    fontSize: 14,
+  },
 });

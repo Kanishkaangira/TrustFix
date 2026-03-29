@@ -36,7 +36,6 @@ const LEGAL = [
   'Terms of Service',
   'Privacy Policy',
   'Rate Us on Play Store',
-  'Open Source Licenses',
 ];
 
 export default function AboutScreen({ onBack }) {

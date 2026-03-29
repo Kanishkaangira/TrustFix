@@ -80,7 +80,7 @@ const BADGES = [
 // ════════════════════════════════════════════════════════════════
 //  HOME SCREEN COMPONENT
 // ════════════════════════════════════════════════════════════════
-const Home = () => {
+const Home = ({ navigation }) => {
   // Controls the text typed into the search bar
   const [search, setSearch] = useState('');
 
@@ -202,7 +202,7 @@ const Home = () => {
         <View style={styles.servicesSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Services</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('Booking')}>
               <Text style={styles.seeAll}>See all →</Text>
             </TouchableOpacity>
           </View>
@@ -217,7 +217,11 @@ const Home = () => {
               </TouchableOpacity>
             ))}
             {/* More card */}
-            <TouchableOpacity style={[styles.svcCard, styles.moreCard]} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={[styles.svcCard, styles.moreCard]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('Booking')}
+            >
               <View style={[styles.svcIconWrap, styles.moreIconWrap]}>
                 <Icon name="plus" size={28} color={C.coral} />
               </View>

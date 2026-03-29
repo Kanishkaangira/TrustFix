@@ -23,8 +23,8 @@ const METHODS = [
 ];
 
 const AddBtn = () => (
-  <TouchableOpacity activeOpacity={0.7}>
-    <Text style={{ color: PC.white, fontWeight: '700', fontSize: 14 }}>+ Add</Text>
+  <TouchableOpacity activeOpacity={0.7} style={styles.addBtn}>
+    <Text style={styles.addBtnText}>+ Add</Text>
   </TouchableOpacity>
 );
 
@@ -80,4 +80,17 @@ const styles = StyleSheet.create({
   cardStripe: { height: 3, width: '100%', marginTop: 2 },
   name: { fontSize: 14, fontWeight: '600', color: PC.ink },
   sub: { fontSize: 12, color: PC.muted, marginTop: 2 },
+  addBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  addBtnText: {
+    color: PC.white,
+    fontWeight: '700',
+    fontSize: 14,
+  },
 });

@@ -302,6 +302,8 @@ const shell = StyleSheet.create({
   },
   titleNearBack: {
     marginLeft: 8,
+    flex: 1,
+    textAlign: 'left',
   },
   titleLarge: {
     fontSize: 20,
@@ -310,7 +312,7 @@ const shell = StyleSheet.create({
     color: PC.white,
   },
   rightSlot: {
-    width:          80,
+    width:          96,
     alignItems:     'flex-end',
     justifyContent: 'center',
   },
