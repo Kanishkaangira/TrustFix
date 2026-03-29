@@ -6,9 +6,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import ScreenWrapper from '../../Components/ScreenWrapper';
 
 import {
   PC,
@@ -123,8 +123,12 @@ const gi = StyleSheet.create({
 
 export default function ProfileMain({ onNavigate }) {
   return (
+    <ScreenWrapper
+      topColor={PC.brand}
+      bottomColor={PC.bg}
+      statusBarStyle="light-content"
+    >
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={PC.brand} />
 
       <View style={styles.hero}>
         <View style={[styles.blob, { width: 240, height: 240, top: -90, right: -65 }]} />
@@ -315,6 +319,7 @@ export default function ProfileMain({ onNavigate }) {
         </SettingsCard>
       </ScrollView>
     </SafeAreaView>
+    </ScreenWrapper>
   );
 }
 

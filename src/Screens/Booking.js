@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  StatusBar,
   Platform,
 } from 'react-native';
 
@@ -21,6 +20,7 @@ import SelectProblem  from './BookingFlow/SelectProblem';
 import SelectSeverity from './BookingFlow/SelectSeverity';
 import SelectSlot     from './BookingFlow/SelectSlot';
 import PriceSummary   from './BookingFlow/PriceSummary';
+import ScreenWrapper  from '../Components/ScreenWrapper';
 
 import { COLORS, FONT, SPACING } from '../theme';
 
@@ -155,10 +155,16 @@ export default function Bookings({ route, navigation }) {
 
   const progressStep = step;
   const showHeader   = step !== STEPS.SELECT_SERVICE;
+  const topColor = step === STEPS.SELECT_SERVICE ? '#FF6B3D' : COLORS.surface;
+  const statusBarStyle = step === STEPS.SELECT_SERVICE ? 'light-content' : 'dark-content';
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
+    <ScreenWrapper
+      topColor={topColor}
+      bottomColor={COLORS.background}
+      statusBarStyle={statusBarStyle}
+    >
+      <SafeAreaView style={[styles.safe, { backgroundColor: topColor }]}>
 
       {/* ════════════════════════════════════════════════════════
            TOP BLOCK — header row + step dots + fill bar
@@ -284,7 +290,8 @@ export default function Bookings({ route, navigation }) {
       {/* Screen content */}
       <View style={styles.content}>{renderStep()}</View>
 
-    </SafeAreaView>
+      </SafeAreaView>
+    </ScreenWrapper>
   );
 }
 
