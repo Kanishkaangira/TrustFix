@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 
+import ScreenWrapper from '../../Components/ScreenWrapper';
 import { PC, SubScreenShell } from '../../Components/ProfileComponents';
 
 const InputField = ({
@@ -50,93 +51,105 @@ export default function EditProfileScreen({ onBack }) {
   };
 
   return (
-    <SubScreenShell title="Edit Profile" onBack={onBack} accentHeader>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <ScreenWrapper
+      topColor={PC.brand}
+      bottomColor={PC.bg}
+      statusBarStyle="light-content"
+    >
+      <SubScreenShell
+        title="Edit Profile"
+        onBack={onBack}
+        accentHeader
+        titleNearBack
+        titleLarge
       >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 48 }}
-          keyboardShouldPersistTaps="handled"
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.avatarSection}>
-            <View style={styles.avatarOuter}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarInitials}>{initials}</Text>
-              </View>
-
-              <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.85}>
-                <View style={styles.cameraBody}>
-                  <View style={styles.cameraLens} />
-                  <View style={styles.cameraNotch} />
-                </View>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.avatarHint}>Tap to update photo</Text>
-          </View>
-
-          <View style={styles.formCard}>
-            <Text style={styles.formSectionLabel}>PERSONAL INFO</Text>
-
-            <InputField
-              label="First Name"
-              value={firstName}
-              onChangeText={setFirstName}
-              placeholder="Enter first name"
-              maxLength={30}
-            />
-            <View style={styles.fieldDivider} />
-
-            <InputField
-              label="Last Name"
-              value={lastName}
-              onChangeText={setLastName}
-              placeholder="Enter last name"
-              maxLength={30}
-            />
-          </View>
-
-          <View style={[styles.formCard, { marginTop: 12 }]}>
-            <Text style={styles.formSectionLabel}>CONTACT INFO</Text>
-
-            <InputField
-              label="Phone Number"
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="+91 XXXXX XXXXX"
-              keyboardType="phone-pad"
-              maxLength={14}
-              editable={false}
-            />
-            <View style={styles.fieldDivider} />
-            <Text style={styles.verifiedNote}>
-              Phone number is verified. Contact support to change
-            </Text>
-
-            <View style={styles.fieldDivider} />
-
-            <InputField
-              label="Email Address"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="your@email.com"
-              keyboardType="email-address"
-              maxLength={60}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={styles.mainSaveBtn}
-            onPress={handleSave}
-            activeOpacity={0.9}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 48 }}
+            keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.mainSaveBtnText}>Save Changes</Text>
-            <View style={styles.mainSaveBtnArrow} />
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SubScreenShell>
+            <View style={styles.avatarSection}>
+              <View style={styles.avatarOuter}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarInitials}>{initials}</Text>
+                </View>
+
+                <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.85}>
+                  <View style={styles.cameraBody}>
+                    <View style={styles.cameraLens} />
+                    <View style={styles.cameraNotch} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.avatarHint}>Tap to update photo</Text>
+            </View>
+
+            <View style={styles.formCard}>
+              <Text style={styles.formSectionLabel}>PERSONAL INFO</Text>
+
+              <InputField
+                label="First Name"
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="Enter first name"
+                maxLength={30}
+              />
+              <View style={styles.fieldDivider} />
+
+              <InputField
+                label="Last Name"
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Enter last name"
+                maxLength={30}
+              />
+            </View>
+
+            <View style={[styles.formCard, { marginTop: 12 }]}>
+              <Text style={styles.formSectionLabel}>CONTACT INFO</Text>
+
+              <InputField
+                label="Phone Number"
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="+91 XXXXX XXXXX"
+                keyboardType="phone-pad"
+                maxLength={14}
+                editable={false}
+              />
+              <View style={styles.fieldDivider} />
+              <Text style={styles.verifiedNote}>
+                Phone number is verified. Contact support to change
+              </Text>
+
+              <View style={styles.fieldDivider} />
+
+              <InputField
+                label="Email Address"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="your@email.com"
+                keyboardType="email-address"
+                maxLength={60}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.mainSaveBtn}
+              onPress={handleSave}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.mainSaveBtnText}>Save Changes</Text>
+              <View style={styles.mainSaveBtnArrow} />
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SubScreenShell>
+    </ScreenWrapper>
   );
 }
 

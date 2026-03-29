@@ -219,6 +219,8 @@ export const SubScreenShell = ({
   onBack,
   rightAction,
   accentHeader = false,
+  titleNearBack = false,
+  titleLarge = false,
   children,
 }) => (
   <SafeAreaView
@@ -226,12 +228,19 @@ export const SubScreenShell = ({
     edges={['top']}
   >
     {/* Header */}
-    <View style={[shell.header, accentHeader && shell.headerAccent]}>
+    <View style={[shell.header, accentHeader && shell.headerAccent, titleNearBack && shell.headerStart]}>
       <TouchableOpacity onPress={onBack} style={shell.backBtn} activeOpacity={0.6}>
         <View style={[shell.chevronLeft, accentHeader && shell.chevronWhite]} />
       </TouchableOpacity>
 
-      <Text style={[shell.title, accentHeader && shell.titleWhite]}>
+      <Text
+        style={[
+          shell.title,
+          accentHeader && shell.titleWhite,
+          titleNearBack && shell.titleNearBack,
+          titleLarge && shell.titleLarge,
+        ]}
+      >
         {title}
       </Text>
 
@@ -264,6 +273,9 @@ const shell = StyleSheet.create({
     backgroundColor:   PC.brand,
     borderBottomColor: 'transparent',
   },
+  headerStart: {
+    justifyContent: 'flex-start',
+  },
   backBtn: {
     width:          40,
     height:         40,
@@ -287,6 +299,12 @@ const shell = StyleSheet.create({
     fontWeight:    '700',
     color:         PC.ink,
     letterSpacing: 0.1,
+  },
+  titleNearBack: {
+    marginLeft: 8,
+  },
+  titleLarge: {
+    fontSize: 20,
   },
   titleWhite: {
     color: PC.white,
