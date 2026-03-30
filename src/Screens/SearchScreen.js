@@ -120,7 +120,8 @@ const RECENT_SEARCHES = ['AC Repair', 'Plumbing', 'Cleaning'];
 const POPULAR_SEARCHES = ['Electrician', 'Gas refill', 'Water leakage', 'Carpentry'];
 const HAS_VOICE_NATIVE_MODULE = !!NativeModules.Voice;
 
-export default function SearchScreen({ navigation }) {
+export default function SearchScreen({ navigation, route }) {
+  const autoListenTrigger = route?.params?.autoListenTrigger ?? null;
   const [query, setQuery] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [showListeningFocus, setShowListeningFocus] = useState(false);
@@ -193,6 +194,19 @@ export default function SearchScreen({ navigation }) {
 
     return unsubscribe;
   }, [navigation, isListening, showListeningFocus]);
+
+  useEffect(() => {
+    if (!autoListenTrigger) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      void handleMicPress();
+      navigation.setParams({ autoListenTrigger: undefined });
+    }, 220);
+
+    return () => clearTimeout(timer);
+  }, [autoListenTrigger, navigation]);
 
   const filteredServices = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -334,7 +348,7 @@ export default function SearchScreen({ navigation }) {
           <View style={styles.searchBar}>
             <Icon name="magnify" size={20} color={COLORS.inkMuted} />
             <TextInput
-              autoFocus
+              autoFocus={!autoListenTrigger}
               value={query}
               onChangeText={setQuery}
               onFocus={handleSearchFieldFocus}

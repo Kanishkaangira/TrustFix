@@ -5,8 +5,9 @@
 //   • Service pill — improved: icon initial box + colored border + check dot
 //   • CTA in SelectProblem renamed "Next Step" and hides when keyboard open
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  BackHandler,
   View,
   Text,
   TouchableOpacity,
@@ -14,6 +15,7 @@ import {
   SafeAreaView,
   Platform,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 import SelectService  from './BookingFlow/SelectService';
 import SelectProblem  from './BookingFlow/SelectProblem';
@@ -23,6 +25,10 @@ import PriceSummary   from './BookingFlow/PriceSummary';
 import ScreenWrapper  from '../Components/ScreenWrapper';
 
 import { COLORS, FONT, SPACING } from '../theme';
+import {
+  getDefaultAddress,
+  subscribeToAddresses,
+} from '../store/addressStore';
 
 // ─── Step constants ────────────────────────────────────────────
 const STEPS = {
@@ -41,6 +47,11 @@ const STEP_CONFIG = [
   { step: 5, label: 'Review'   },
 ];
 
+const FALLBACK_ADDRESS = {
+  label: 'Home',
+  address: '42, Green Park, New Delhi',
+};
+
 // ─── Main controller ───────────────────────────────────────────
 export default function Bookings({ route, navigation }) {
   const preService = route?.params?.service || null;
@@ -48,10 +59,6 @@ export default function Bookings({ route, navigation }) {
   const returnedAddress = route?.params?.selectedAddress || null;
   const addressTrigger = route?.params?.addressTrigger || null;
   const returnStep = route?.params?.returnStep || null;
-  const currentAddress = returnedAddress || {
-    label: 'Home',
-    address: '42, Green Park, New Delhi',
-  };
 
   const [step,          setStep]          = useState(preService ? STEPS.SELECT_PROBLEM : STEPS.SELECT_SERVICE);
   const [service,       setService]       = useState(preService);
@@ -60,11 +67,26 @@ export default function Bookings({ route, navigation }) {
   const [severity,      setSeverity]      = useState(null);
   const [date,          setDate]          = useState(null);
   const [slot,          setSlot]          = useState(null);
+  const [defaultAddress, setDefaultAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
+  const [bookingAddress, setBookingAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
+  const [hasCustomAddress, setHasCustomAddress] = useState(false);
+  const currentAddress = bookingAddress || defaultAddress || FALLBACK_ADDRESS;
 
   // Tell navigator what step we are on
   useEffect(() => {
     navigation.setParams({ currentStep: step });
-  }, [step]);
+  }, [step, navigation]);
+
+  useEffect(() => subscribeToAddresses((nextAddresses) => {
+    const nextDefaultAddress = nextAddresses.find((item) => item.isDefault) || nextAddresses[0] || FALLBACK_ADDRESS;
+    setDefaultAddress(nextDefaultAddress);
+  }), []);
+
+  useEffect(() => {
+    if (!hasCustomAddress) {
+      setBookingAddress(defaultAddress || FALLBACK_ADDRESS);
+    }
+  }, [defaultAddress, hasCustomAddress]);
 
   useEffect(() => {
     if (preService) {
@@ -79,17 +101,34 @@ export default function Bookings({ route, navigation }) {
       return;
     }
 
+    if (returnedAddress) {
+      setBookingAddress(returnedAddress);
+      setHasCustomAddress(true);
+    }
+
     if (returnStep === STEPS.SELECT_SLOT || addressTrigger) {
+      if (!returnedAddress) {
+        setBookingAddress(defaultAddress || FALLBACK_ADDRESS);
+        setHasCustomAddress(false);
+      }
+
       setStep(STEPS.SELECT_SLOT);
       navigation.setParams({
+        selectedAddress: undefined,
         returnStep: undefined,
         addressTrigger: undefined,
       });
     }
-  }, [preService, serviceTrigger, returnStep, addressTrigger, navigation]);
+  }, [preService, serviceTrigger, returnedAddress, returnStep, addressTrigger, navigation, defaultAddress]);
+
+  useEffect(() => {
+    if (step === STEPS.SELECT_SERVICE) {
+      setHasCustomAddress(false);
+    }
+  }, [step]);
 
   // ── Back navigation ────────────────────────────────────────
-  const goBack = () => {
+  const goBack = useCallback(() => {
     if (step === STEPS.SELECT_PROBLEM && service) {
       setService(null);
       setProblem(null);
@@ -114,7 +153,26 @@ export default function Bookings({ route, navigation }) {
       }
       return prev - 1;
     });
-  };
+  }, [navigation, service, severity, step]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const handleHardwareBack = () => {
+        if (step === STEPS.SELECT_SERVICE) {
+          return false;
+        }
+
+        goBack();
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBack);
+
+      return () => {
+        subscription.remove();
+      };
+    }, [goBack, step])
+  );
 
   // ── Step handlers ──────────────────────────────────────────
   const handleServiceSelect = (selected) => {

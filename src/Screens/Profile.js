@@ -2,8 +2,9 @@
 // Profile controller - same pattern as Booking.js
 // Sends profileScreen param so HomeBottomNav can hide tab bar on sub-screens
 
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { BackHandler, View, StyleSheet } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 import ProfileMain from './ProfileFlow/ProfileMain';
 import EditProfileScreen from './ProfileFlow/EditProfileScreen';
@@ -14,6 +15,11 @@ import HelpScreen from './ProfileFlow/HelpScreen';
 import AboutScreen from './ProfileFlow/AboutScreen';
 import ShareScreen from './ProfileFlow/ShareScreen';
 import SubscriptionScreen from './ProfileFlow/SubscriptionScreen';
+import {
+  getAddresses,
+  subscribeToAddresses,
+  updateAddresses,
+} from '../store/addressStore';
 
 const SCREENS = {
   MAIN: 'main',
@@ -31,6 +37,7 @@ const VALID_SCREENS = Object.values(SCREENS);
 
 export default function Profile({ navigation, route }) {
   const [activeScreen, setActiveScreen] = useState(SCREENS.MAIN);
+  const [addresses, setAddresses] = useState(() => getAddresses());
   const returnToBooking = route?.params?.returnToBooking === true;
 
   useEffect(() => {
@@ -50,8 +57,11 @@ export default function Profile({ navigation, route }) {
     navigation.setParams({ profileScreen: activeScreen });
   }, [activeScreen, navigation]);
 
+  useEffect(() => subscribeToAddresses(setAddresses), []);
+
   const navigate = (screen) => setActiveScreen(screen);
-  const goBack = () => {
+
+  const goBack = useCallback(() => {
     if (returnToBooking && activeScreen === SCREENS.ADDRESSES) {
       setActiveScreen(SCREENS.MAIN);
       navigation.setParams({
@@ -67,7 +77,70 @@ export default function Profile({ navigation, route }) {
     }
 
     setActiveScreen(SCREENS.MAIN);
-  };
+  }, [activeScreen, navigation, returnToBooking]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const handleHardwareBack = () => {
+        if (activeScreen === SCREENS.MAIN) {
+          return false;
+        }
+
+        goBack();
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBack);
+
+      return () => {
+        subscription.remove();
+      };
+    }, [activeScreen, goBack])
+  );
+
+  const handleAddAddress = useCallback((newAddress) => {
+    updateAddresses((prev) => {
+      const shouldBeDefault = newAddress.isDefault || prev.length === 0;
+      const nextBase = shouldBeDefault
+        ? prev.map((item) => ({ ...item, isDefault: false }))
+        : prev;
+
+      return [
+        ...nextBase,
+        {
+          id: `address-${Date.now()}`,
+          label: newAddress.label.trim(),
+          address: newAddress.address.trim(),
+          isDefault: shouldBeDefault,
+        },
+      ];
+    });
+  }, []);
+
+  const handleDeleteAddress = useCallback((addressId) => {
+    updateAddresses((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+
+      const next = prev.filter((item) => item.id !== addressId);
+
+      if (!next.some((item) => item.isDefault) && next.length) {
+        return next.map((item, index) => (
+          index === 0 ? { ...item, isDefault: true } : item
+        ));
+      }
+
+      return next;
+    });
+  }, []);
+
+  const handleSetDefaultAddress = useCallback((addressId) => {
+    updateAddresses((prev) => prev.map((item) => ({
+      ...item,
+      isDefault: item.id === addressId,
+    })));
+  }, []);
 
   const handleAddressSelect = (selectedAddress) => {
     if (returnToBooking) {
@@ -95,7 +168,17 @@ export default function Profile({ navigation, route }) {
       case SCREENS.NOTIFICATIONS:
         return <NotificationsScreen onBack={goBack} />;
       case SCREENS.ADDRESSES:
-        return <AddressesScreen onBack={goBack} onSelectAddress={handleAddressSelect} />;
+        return (
+          <AddressesScreen
+            onBack={goBack}
+            onSelectAddress={handleAddressSelect}
+            addresses={addresses}
+            onAddAddress={handleAddAddress}
+            onDeleteAddress={handleDeleteAddress}
+            onSetDefaultAddress={handleSetDefaultAddress}
+            selectable={returnToBooking}
+          />
+        );
       case SCREENS.PAYMENT:
         return <PaymentScreen onBack={goBack} />;
       case SCREENS.HELP:

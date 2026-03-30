@@ -80,6 +80,16 @@ const BADGES = [
 //  HOME SCREEN COMPONENT
 // ════════════════════════════════════════════════════════════════
 const Home = ({ navigation }) => {
+  const openSearch = () => {
+    navigation.getParent()?.navigate('Search');
+  };
+
+  const openVoiceSearch = () => {
+    navigation.getParent()?.navigate('Search', {
+      autoListenTrigger: Date.now(),
+    });
+  };
+
   const openBookingProblemStep = (service) => {
     navigation.navigate('Booking', {
       service,
@@ -162,17 +172,23 @@ const Home = ({ navigation }) => {
         </View>
 
         {/* ── Search bar — white card floating in gradient ── */}
-        <TouchableOpacity
-          style={styles.searchBar}
-          activeOpacity={0.9}
-          onPress={() => navigation.getParent()?.navigate('Search')}
-        >
-          <Icon name="magnify" size={20} color={C.textTertiary} style={styles.searchIcon} />
-          <Text style={styles.searchPlaceholder}>Search AC repair, plumber...</Text>
-          <TouchableOpacity style={styles.micBtn}>
+        <View style={styles.searchBar}>
+          <TouchableOpacity
+            style={styles.searchTapArea}
+            activeOpacity={0.9}
+            onPress={openSearch}
+          >
+            <Icon name="magnify" size={20} color={C.textTertiary} style={styles.searchIcon} />
+            <Text style={styles.searchPlaceholder}>Search AC repair, plumber...</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.micBtn}
+            activeOpacity={0.85}
+            onPress={openVoiceSearch}
+          >
             <Icon name="microphone-outline" size={18} color={C.coral} />
           </TouchableOpacity>
-        </TouchableOpacity>
+        </View>
 
       </LinearGradient>
       {/* ── END HEADER ── */}
@@ -450,6 +466,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 6,
+  },
+  searchTapArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   searchIcon: { marginRight: 8 },
   searchPlaceholder: {
