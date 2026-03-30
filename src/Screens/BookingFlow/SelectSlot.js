@@ -41,7 +41,7 @@ const TIME_SLOTS = [
   { id: 'slot5', label: '6–8 PM',   available: true  },
 ];
 
-export default function SelectSlot({ onNext }) {
+export default function SelectSlot({ onNext, navigation, selectedAddress }) {
   const dates = useMemo(() => generateDates(), []);
 
   const [selectedDate, setSelectedDate] = useState(null);
@@ -52,6 +52,13 @@ export default function SelectSlot({ onNext }) {
   const handleNext = () => {
     if (!canProceed) return;
     onNext(selectedDate, selectedSlot);
+  };
+
+  const handleChangeAddress = () => {
+    navigation?.navigate('Profile', {
+      openScreen: 'addresses',
+      returnToBooking: true,
+    });
   };
 
   return (
@@ -149,12 +156,14 @@ export default function SelectSlot({ onNext }) {
       <View style={styles.addressCard}>
         <View style={styles.addressLeft}>
           <Text style={styles.addressIcon}>📍</Text>
-          <View>
-            <Text style={styles.addressName}>Home</Text>
-            <Text style={styles.addressDetail}>42, Green Park, New Delhi</Text>
+          <View style={styles.addressTextWrap}>
+            <Text style={styles.addressName}>{selectedAddress?.label || 'Home'}</Text>
+            <Text style={styles.addressDetail} numberOfLines={2}>
+              {selectedAddress?.address || '42, Green Park, New Delhi'}
+            </Text>
           </View>
         </View>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={handleChangeAddress} activeOpacity={0.8}>
           <Text style={styles.changeBtn}>Change</Text>
         </TouchableOpacity>
       </View>
@@ -354,6 +363,12 @@ const styles = StyleSheet.create({
   addressLeft: {
     flexDirection: 'row',
     alignItems:    'center',
+    flex:          1,
+    minWidth:      0,
+  },
+  addressTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   addressIcon: {
     fontSize:    22,
@@ -368,11 +383,13 @@ const styles = StyleSheet.create({
     fontSize:  13,
     color:     '#757575',
     marginTop:  2,
+    flexShrink: 1,
   },
   changeBtn: {
     fontSize:   14,
     fontWeight: '700',
     color:      ORANGE,
+    marginLeft: 12,
   },
 
   // CTA

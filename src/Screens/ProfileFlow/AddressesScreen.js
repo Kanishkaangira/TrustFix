@@ -28,7 +28,7 @@ const AddBtn = () => (
   </TouchableOpacity>
 );
 
-export default function AddressesScreen({ onBack }) {
+export default function AddressesScreen({ onBack, onSelectAddress }) {
   return (
     <ScreenWrapper topColor={PC.brand} bottomColor={PC.bg} statusBarStyle="light-content">
       <SubScreenShell
@@ -46,7 +46,11 @@ export default function AddressesScreen({ onBack }) {
           <SettingsCard style={{ marginHorizontal: 0, marginTop: 8 }}>
             {ADDRESSES.map((a, i) => (
               <View key={a.label}>
-                <View style={styles.row}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={styles.row}
+                  onPress={() => onSelectAddress?.(a)}
+                >
                   <View style={[styles.iconBox, { backgroundColor: a.isDefault ? PC.brandSoft : PC.bg }]}>
                     <View style={[styles.pinCircle, { borderColor: a.isDefault ? PC.brand : PC.muted }]} />
                     <View style={[styles.pinTail, { backgroundColor: a.isDefault ? PC.brand : PC.muted }]} />
@@ -65,7 +69,7 @@ export default function AddressesScreen({ onBack }) {
                     <View style={styles.moreDot} />
                     <View style={styles.moreDot} />
                   </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
                 {i < ADDRESSES.length - 1 && <RowDivider />}
               </View>
             ))}

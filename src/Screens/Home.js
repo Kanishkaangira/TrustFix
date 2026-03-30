@@ -4,14 +4,13 @@
 //  Matches the app screenshot UI exactly
 // ════════════════════════════════════════════════════════════════
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -61,11 +60,11 @@ const C = {
 
 // 5 services + 1 "More" card = 2 rows of 3
 const SERVICES = [
-  { id: '1', icon: 'snowflake',          name: 'AC Repair',  price: '₹349', iconColor: C.skyIcon,    bg: C.skyBg    },
-  { id: '2', icon: 'pipe-wrench',        name: 'Plumbing',   price: '₹199', iconColor: C.greenIcon,  bg: C.greenBg  },
-  { id: '3', icon: 'lightning-bolt',     name: 'Electrical', price: '₹249', iconColor: C.amberIcon,  bg: C.amberBg  },
-  { id: '4', icon: 'view-grid',          name: 'Carpentry',  price: '₹299', iconColor: C.violetIcon, bg: C.violetBg },
-  { id: '5', icon: 'broom',              name: 'Cleaning',   price: '₹399', iconColor: C.roseIcon,   bg: C.roseBg   },
+  { id: '1', icon: 'snowflake',          name: 'AC Repair',  price: '₹349', iconColor: C.skyIcon,    bg: C.skyBg,    bookingService: { id: 'ac', label: 'AC Repair', shortLabel: 'AC Repair', icon: 'snowflake', accentColor: '#2563EB', iconColor: '#2563EB', lightColor: '#DBEAFE', startingAt: '₹349' } },
+  { id: '2', icon: 'pipe-wrench',        name: 'Plumbing',   price: '₹199', iconColor: C.greenIcon,  bg: C.greenBg,  bookingService: { id: 'plumbing', label: 'Plumbing', shortLabel: 'Plumbing', icon: 'pipe-wrench', accentColor: '#16A34A', iconColor: '#16A34A', lightColor: '#DCFCE7', startingAt: '₹199' } },
+  { id: '3', icon: 'lightning-bolt',     name: 'Electrical', price: '₹249', iconColor: C.amberIcon,  bg: C.amberBg,  bookingService: { id: 'electrician', label: 'Electrical', shortLabel: 'Electrician', icon: 'lightning-bolt', accentColor: '#D97706', iconColor: '#D97706', lightColor: '#FEF3C7', startingAt: '₹249' } },
+  { id: '4', icon: 'view-grid',          name: 'Carpentry',  price: '₹299', iconColor: C.violetIcon, bg: C.violetBg, bookingService: { id: 'carpentry', label: 'Carpentry', shortLabel: 'Carpentry', icon: 'view-grid', accentColor: '#7C3AED', iconColor: '#7C3AED', lightColor: '#EDE9FE', startingAt: '₹299' } },
+  { id: '5', icon: 'broom',              name: 'Cleaning',   price: '₹399', iconColor: C.roseIcon,   bg: C.roseBg,   bookingService: { id: 'cleaning', label: 'Cleaning', shortLabel: 'Deep Cleaning', icon: 'broom', accentColor: '#E11D48', iconColor: '#E11D48', lightColor: '#FFE4E6', startingAt: '₹399' } },
 ];
 
 // 4 trust badges shown in horizontal scroll strip
@@ -81,8 +80,12 @@ const BADGES = [
 //  HOME SCREEN COMPONENT
 // ════════════════════════════════════════════════════════════════
 const Home = ({ navigation }) => {
-  // Controls the text typed into the search bar
-  const [search, setSearch] = useState('');
+  const openBookingProblemStep = (service) => {
+    navigation.navigate('Booking', {
+      service,
+      serviceTrigger: Date.now(),
+    });
+  };
 
   return (
     <ScreenWrapper
@@ -106,12 +109,18 @@ const Home = ({ navigation }) => {
           {/* Icons — right side */}
           <View style={styles.topIcons}>
             {/* Bell with notification dot */}
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => navigation.navigate('Profile', { openScreen: 'notifications' })}
+            >
               <Icon name="bell-outline" size={20} color={C.white} />
               <View style={styles.notifDot} />
             </TouchableOpacity>
             {/* Avatar circle */}
-            <TouchableOpacity style={styles.avatarCircle}>
+            <TouchableOpacity
+              style={styles.avatarCircle}
+              onPress={() => navigation.navigate('Profile', { openScreen: 'main' })}
+            >
               <Text style={styles.avatarText}>KA</Text>
             </TouchableOpacity>
           </View>
@@ -153,19 +162,17 @@ const Home = ({ navigation }) => {
         </View>
 
         {/* ── Search bar — white card floating in gradient ── */}
-        <View style={styles.searchBar}>
+        <TouchableOpacity
+          style={styles.searchBar}
+          activeOpacity={0.9}
+          onPress={() => navigation.getParent()?.navigate('Search')}
+        >
           <Icon name="magnify" size={20} color={C.textTertiary} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search AC repair, plumber..."
-            placeholderTextColor={C.textTertiary}
-            value={search}
-            onChangeText={setSearch}
-          />
+          <Text style={styles.searchPlaceholder}>Search AC repair, plumber...</Text>
           <TouchableOpacity style={styles.micBtn}>
             <Icon name="microphone-outline" size={18} color={C.coral} />
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
 
       </LinearGradient>
       {/* ── END HEADER ── */}
@@ -208,7 +215,12 @@ const Home = ({ navigation }) => {
           </View>
           <View style={styles.servicesGrid}>
             {SERVICES.map((svc) => (
-              <TouchableOpacity key={svc.id} style={styles.svcCard} activeOpacity={0.8}>
+              <TouchableOpacity
+                key={svc.id}
+                style={styles.svcCard}
+                activeOpacity={0.8}
+                onPress={() => openBookingProblemStep(svc.bookingService)}
+              >
                 <View style={[styles.svcIconWrap, { backgroundColor: svc.bg }]}>
                   <Icon name={svc.icon} size={28} color={svc.iconColor} />
                 </View>
@@ -440,11 +452,10 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   searchIcon: { marginRight: 8 },
-  searchInput: {
+  searchPlaceholder: {
     flex: 1,
     fontSize: 14,
-    color: C.textPrimary,
-    height: 36,
+    color: C.textTertiary,
   },
   micBtn: {
     width: 36,

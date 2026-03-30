@@ -44,6 +44,14 @@ const STEP_CONFIG = [
 // ─── Main controller ───────────────────────────────────────────
 export default function Bookings({ route, navigation }) {
   const preService = route?.params?.service || null;
+  const serviceTrigger = route?.params?.serviceTrigger || null;
+  const returnedAddress = route?.params?.selectedAddress || null;
+  const addressTrigger = route?.params?.addressTrigger || null;
+  const returnStep = route?.params?.returnStep || null;
+  const currentAddress = returnedAddress || {
+    label: 'Home',
+    address: '42, Green Park, New Delhi',
+  };
 
   const [step,          setStep]          = useState(preService ? STEPS.SELECT_PROBLEM : STEPS.SELECT_SERVICE);
   const [service,       setService]       = useState(preService);
@@ -58,11 +66,42 @@ export default function Bookings({ route, navigation }) {
     navigation.setParams({ currentStep: step });
   }, [step]);
 
+  useEffect(() => {
+    if (preService) {
+      setService(preService);
+      setProblem(null);
+      setCustomProblem('');
+      setSeverity(null);
+      setDate(null);
+      setSlot(null);
+      setStep(STEPS.SELECT_PROBLEM);
+      navigation.setParams({ service: undefined, serviceTrigger: undefined });
+      return;
+    }
+
+    if (returnStep === STEPS.SELECT_SLOT || addressTrigger) {
+      setStep(STEPS.SELECT_SLOT);
+      navigation.setParams({
+        returnStep: undefined,
+        addressTrigger: undefined,
+      });
+    }
+  }, [preService, serviceTrigger, returnStep, addressTrigger, navigation]);
+
   // ── Back navigation ────────────────────────────────────────
   const goBack = () => {
-    const isFirstStep =
-      step === STEPS.SELECT_SERVICE ||
-      (step === STEPS.SELECT_PROBLEM && preService);
+    if (step === STEPS.SELECT_PROBLEM && service) {
+      setService(null);
+      setProblem(null);
+      setCustomProblem('');
+      setSeverity(null);
+      setDate(null);
+      setSlot(null);
+      setStep(STEPS.SELECT_SERVICE);
+      return;
+    }
+
+    const isFirstStep = step === STEPS.SELECT_SERVICE;
 
     if (isFirstStep) {
       navigation.goBack();
@@ -129,7 +168,13 @@ export default function Bookings({ route, navigation }) {
         );
 
       case STEPS.SELECT_SLOT:
-        return <SelectSlot onNext={handleSlotNext} />;
+        return (
+          <SelectSlot
+            onNext={handleSlotNext}
+            navigation={navigation}
+            selectedAddress={currentAddress}
+          />
+        );
 
       case STEPS.PRICE_SUMMARY:
         return (
@@ -140,9 +185,10 @@ export default function Bookings({ route, navigation }) {
             severity={severity}
             date={date}
             slot={slot}
+            address={currentAddress}
             onConfirm={() =>
               navigation.navigate('Payment', {
-                service, problem, customProblem, severity, date, slot,
+                service, problem, customProblem, severity, date, slot, address: currentAddress,
               })
             }
           />

@@ -2,9 +2,9 @@
 // Uses useFocusEffect so StatusBar updates ONLY when this screen is active.
 // This prevents other screens' colors from bleeding through on Android.
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View, StatusBar, StyleSheet } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 const ScreenWrapper = ({
   children,
@@ -12,6 +12,7 @@ const ScreenWrapper = ({
   bottomColor    = '#FAF9F6',
   statusBarStyle = 'dark-content',
 }) => {
+  const isFocused = useIsFocused();
 
   // useFocusEffect fires when THIS screen gains/loses focus.
   // So Home sets coral when focused, AiChat sets white when focused —
@@ -22,6 +23,16 @@ const ScreenWrapper = ({
       StatusBar.setBarStyle(statusBarStyle, false);
     }, [topColor, statusBarStyle])
   );
+
+  // Re-apply the active screen colors after nested stack/tab transitions.
+  // This keeps Android's status bar background stable when returning
+  // from overlay screens like Search back to Home.
+  useEffect(() => {
+    if (!isFocused) return;
+
+    StatusBar.setBackgroundColor(topColor, false);
+    StatusBar.setBarStyle(statusBarStyle, false);
+  }, [isFocused, topColor, statusBarStyle]);
 
   return (
     <View style={[styles.root, { backgroundColor: topColor }]}>

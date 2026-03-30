@@ -41,7 +41,13 @@ const LEGAL = [
 export default function AboutScreen({ onBack }) {
   return (
     <ScreenWrapper topColor={PC.brand} bottomColor={PC.bg} statusBarStyle="light-content">
-      <SubScreenShell title="About TrustFix" onBack={onBack} accentHeader>
+      <SubScreenShell
+        title="About TrustFix"
+        onBack={onBack}
+        accentHeader
+        titleNearBack
+        titleLarge
+      >
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
