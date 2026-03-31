@@ -12,7 +12,6 @@ import ScreenWrapper from '../../Components/ScreenWrapper';
 
 import {
   PC,
-  StatusChip,
   SectionLabel,
   SettingRow,
   RowDivider,
@@ -121,242 +120,290 @@ const gi = StyleSheet.create({
   appearInner: { width: 8, height: 6, borderRadius: 2, margin: 2 },
 });
 
+const profile = {
+  name: 'Rahul Sharma',
+  phone: '+91 98765 43210',
+  email: 'rahul.sharma@gmail.com',
+  plan: 'HomeCare Pro',
+  planMeta: `Active \u00B7 Renews Apr 11, 2026`,
+};
+
 export default function ProfileMain({ onNavigate }) {
+  const initials = profile.name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
+
   return (
     <ScreenWrapper
       topColor={PC.brand}
       bottomColor={PC.bg}
       statusBarStyle="light-content"
     >
-    <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.hero}>
+          <View style={[styles.blob, { width: 380, height: 380, top: -156, right: -110 }]} />
+          <View style={[styles.blob, { width: 220, height: 220, top: 80, right: 130 }]} />
+          <View style={[styles.blobDark, { width: 190, height: 190, top: 108, left: -110 }]} />
 
-      <View style={styles.hero}>
-        <View style={[styles.blob, { width: 240, height: 240, top: -90, right: -65 }]} />
-        <View style={[styles.blob, { width: 140, height: 140, bottom: -42, left: 12 }]} />
+          <View style={styles.heroHeader}>
+            <Text style={styles.heroBrand}>TrustFix</Text>
+          </View>
 
-        <View style={styles.heroRow}>
-          <View style={styles.avatarWrap}>
+          <View style={styles.heroRow}>
             <TouchableOpacity
-              style={styles.avatar}
+              style={styles.avatarWrap}
               onPress={() => onNavigate('editProfile')}
               activeOpacity={0.85}
             >
-              <Text style={styles.avatarInitials}>RS</Text>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+
+              <View style={styles.onlineDot} />
+
+              <View style={styles.editBtn}>
+                <View style={styles.editBtnLine} />
+                <View style={styles.editBtnLineShort} />
+              </View>
             </TouchableOpacity>
 
-            <View style={styles.onlineDot} />
-
-            <TouchableOpacity
-              style={styles.editBtn}
-              onPress={() => onNavigate('editProfile')}
-              activeOpacity={0.85}
-            >
-              <View style={styles.pencilBody} />
-              <View style={styles.pencilTip} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.heroInfo}>
-            <Text style={styles.heroName}>Rahul Sharma</Text>
-            <Text style={styles.heroPhone}>+91 98765 43210</Text>
-          </View>
-        </View>
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-      >
-        <View style={styles.statsStrip}>
-          {[
-            { val: '12', label: 'Services' },
-            { val: '₹18k', label: 'Total Spent' },
-            { val: '3', label: 'Warranties' },
-          ].map((s, i) => (
-            <View key={s.label} style={[styles.statCell, i < 2 && styles.statCellBorder]}>
-              <Text style={styles.statVal}>{s.val}</Text>
-              <Text style={styles.statKey}>{s.label}</Text>
+            <View style={styles.heroInfo}>
+              <Text style={styles.heroName}>{profile.name}</Text>
+              <Text style={styles.heroPhone}>{profile.phone}</Text>
+              <Text style={styles.heroEmail} numberOfLines={1}>
+                {profile.email}
+              </Text>
             </View>
-          ))}
+          </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.planStrip}
-          onPress={() => onNavigate('subscription')}
-          activeOpacity={0.85}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
         >
-          <View style={styles.planStarBox}>
-            {[0, 72, 144, 216, 288].map((r, i) => (
-              <View key={i} style={[styles.planStarRay, { transform: [{ rotate: `${r}deg` }] }]} />
+          <View style={styles.statsStrip}>
+            {[
+              { val: '12', label: 'Services' },
+              { val: '\u20B918k', label: 'Total Spent' },
+              { val: '3', label: 'Warranties' },
+            ].map((s, i) => (
+              <View key={s.label} style={[styles.statCell, i < 2 && styles.statCellBorder]}>
+                <Text style={styles.statVal}>{s.val}</Text>
+                <Text style={styles.statKey}>{s.label}</Text>
+              </View>
             ))}
           </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.planName}>HomeCare Pro</Text>
-            <Text style={styles.planExp}>Active · Renews Apr 11, 2026</Text>
-          </View>
-          <StatusChip label="Manage" variant="brand" />
-          <View style={styles.planChevron} />
-        </TouchableOpacity>
 
-        <SectionLabel title="ACCOUNT" />
-        <SettingsCard>
-          <SettingRow
-            iconBg={PC.brandSoft}
-            IconComponent={IconEdit}
-            title="Edit Profile"
-            subtitle="Name, email, city, pincode"
-            onPress={() => onNavigate('editProfile')}
-          />
-          <RowDivider />
-          <SettingRow
-            iconBg={PC.brandSoft}
-            IconComponent={IconLocation}
-            title="Saved Addresses"
-            subtitle="Home, Office + 1 more"
-            rightValue="3"
-            onPress={() => onNavigate('addresses')}
-          />
-          <RowDivider />
-          <SettingRow
-            iconBg={PC.blueSoft}
-            IconComponent={IconCard}
-            title="Payment Methods"
-            subtitle="UPI, Card on file"
-            onPress={() => onNavigate('payment')}
-          />
-        </SettingsCard>
-
-        <SectionLabel title="PREFERENCES" />
-        <SettingsCard>
-          <SettingRow
-            iconBg="#F0F0F5"
-            IconComponent={IconAppear}
-            title="Appearance"
-            subtitle="Dark, Light or System"
-            rightValue="System"
-            onPress={() => {}}
-          />
-          <RowDivider />
-          <SettingRow
-            iconBg={PC.greenSoft}
-            IconComponent={IconBell}
-            title="Notifications"
-            subtitle="Booking updates, promos, reminders"
-            onPress={() => onNavigate('notifications')}
-          />
-          <RowDivider />
-          <SettingRow
-            iconBg={PC.brandSoft}
-            IconComponent={IconStar}
-            title="Subscription Plan"
-            subtitle="HomeCare Pro · Active"
-            rightChip="Pro"
-            rightChipVariant="brand"
+          <TouchableOpacity
+            style={styles.planStrip}
             onPress={() => onNavigate('subscription')}
-          />
-        </SettingsCard>
+            activeOpacity={0.85}
+          >
+            <View style={styles.planIconBox}>
+              <View style={styles.planIconDot} />
+            </View>
 
-        <SectionLabel title="SUPPORT" />
-        <SettingsCard>
-          <SettingRow
-            iconBg={PC.blueSoft}
-            IconComponent={IconChat}
-            title="Help & Support"
-            subtitle="Chat, call or raise a ticket"
-            rightChip="Online"
-            rightChipVariant="green"
-            onPress={() => onNavigate('help')}
-          />
-          <RowDivider />
-          <SettingRow
-            iconBg={PC.brandSoft}
-            IconComponent={IconShare}
-            title="Share TrustFix"
-            subtitle="Refer & earn ₹150 per friend"
-            onPress={() => onNavigate('share')}
-          />
-          <RowDivider />
-          <SettingRow
-            iconBg="#F3F4F6"
-            IconComponent={IconInfo}
-            title="About TrustFix"
-            subtitle="Mission, version & legal"
-            rightValue="v2.1"
-            onPress={() => onNavigate('about')}
-          />
-        </SettingsCard>
+            <View style={styles.planContent}>
+              <Text style={styles.planName}>{profile.plan}</Text>
+              <Text style={styles.planExp}>{profile.planMeta}</Text>
+            </View>
 
-        <SectionLabel title="ACCOUNT ACTIONS" />
-        <SettingsCard>
-          <SettingRow
-            iconBg={PC.redSoft}
-            IconComponent={IconLogout}
-            title="Logout"
-            subtitle="Sign out from this device"
-            danger
-            onPress={() =>
-              Alert.alert('Logout', 'Are you sure you want to logout?', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Logout', style: 'destructive', onPress: () => {} },
-              ])
-            }
-          />
-          <RowDivider />
-          <SettingRow
-            iconBg={PC.redSoft}
-            IconComponent={IconDelete}
-            title="Delete Account"
-            subtitle="Permanently delete all your data"
-            danger
-            onPress={() =>
-              Alert.alert('Delete Account', 'This action is irreversible.', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => {} },
-              ])
-            }
-          />
-        </SettingsCard>
-      </ScrollView>
-    </SafeAreaView>
+            <View style={styles.planAction}>
+              <Text style={styles.planActionText}>Manage</Text>
+              <View style={styles.planChevron} />
+            </View>
+          </TouchableOpacity>
+
+          <SectionLabel title="ACCOUNT" />
+          <SettingsCard>
+            <SettingRow
+              iconBg={PC.brandSoft}
+              IconComponent={IconEdit}
+              title="Edit Profile"
+              subtitle="Name, email, city, pincode"
+              onPress={() => onNavigate('editProfile')}
+            />
+            <RowDivider />
+            <SettingRow
+              iconBg={PC.brandSoft}
+              IconComponent={IconLocation}
+              title="Saved Addresses"
+              subtitle="Home, Office + 1 more"
+              rightValue="3"
+              onPress={() => onNavigate('addresses')}
+            />
+            <RowDivider />
+            <SettingRow
+              iconBg={PC.blueSoft}
+              IconComponent={IconCard}
+              title="Payment Methods"
+              subtitle="UPI, Card on file"
+              onPress={() => onNavigate('payment')}
+            />
+          </SettingsCard>
+
+          <SectionLabel title="PREFERENCES" />
+          <SettingsCard>
+            <SettingRow
+              iconBg="#F0F0F5"
+              IconComponent={IconAppear}
+              title="Appearance"
+              subtitle="Dark, Light or System"
+              rightValue="System"
+              onPress={() => {}}
+            />
+            <RowDivider />
+            <SettingRow
+              iconBg={PC.greenSoft}
+              IconComponent={IconBell}
+              title="Notifications"
+              subtitle="Booking updates, promos, reminders"
+              onPress={() => onNavigate('notifications')}
+            />
+            <RowDivider />
+            <SettingRow
+              iconBg={PC.brandSoft}
+              IconComponent={IconStar}
+              title="Subscription Plan"
+              subtitle="HomeCare Pro \u00B7 Active"
+              rightChip="Pro"
+              rightChipVariant="brand"
+              onPress={() => onNavigate('subscription')}
+            />
+          </SettingsCard>
+
+          <SectionLabel title="SUPPORT" />
+          <SettingsCard>
+            <SettingRow
+              iconBg={PC.blueSoft}
+              IconComponent={IconChat}
+              title="Help & Support"
+              subtitle="Chat, call or raise a ticket"
+              rightChip="Online"
+              rightChipVariant="green"
+              onPress={() => onNavigate('help')}
+            />
+            <RowDivider />
+            <SettingRow
+              iconBg={PC.brandSoft}
+              IconComponent={IconShare}
+              title="Share TrustFix"
+              subtitle="Refer & earn \u20B9150 per friend"
+              onPress={() => onNavigate('share')}
+            />
+            <RowDivider />
+            <SettingRow
+              iconBg="#F3F4F6"
+              IconComponent={IconInfo}
+              title="About TrustFix"
+              subtitle="Mission, version & legal"
+              rightValue="v2.1"
+              onPress={() => onNavigate('about')}
+            />
+          </SettingsCard>
+
+          <SectionLabel title="ACCOUNT ACTIONS" />
+          <SettingsCard>
+            <SettingRow
+              iconBg={PC.redSoft}
+              IconComponent={IconLogout}
+              title="Logout"
+              subtitle="Sign out from this device"
+              danger
+              onPress={() =>
+                Alert.alert('Logout', 'Are you sure you want to logout?', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Logout', style: 'destructive', onPress: () => {} },
+                ])
+              }
+            />
+            <RowDivider />
+            <SettingRow
+              iconBg={PC.redSoft}
+              IconComponent={IconDelete}
+              title="Delete Account"
+              subtitle="Permanently delete all your data"
+              danger
+              onPress={() =>
+                Alert.alert('Delete Account', 'This action is irreversible.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: () => {} },
+                ])
+              }
+            />
+          </SettingsCard>
+        </ScrollView>
+      </SafeAreaView>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: PC.brand },
-  scroll: { flex: 1, backgroundColor: PC.bg },
-  scrollContent: { paddingBottom: 32 },
+  scroll: {
+    flex: 1,
+    backgroundColor: '#F3F4F8',
+    marginTop: -22,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+  },
+  scrollContent: { paddingTop: 28, paddingBottom: 32 },
 
   hero: {
     backgroundColor: PC.brand,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 38,
-    minHeight: 220,
+    paddingTop: 16,
+    paddingBottom: 52,
+    minHeight: 268,
     overflow: 'hidden',
     position: 'relative',
   },
   blob: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  blobDark: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(211,96,45,0.26)',
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  heroBrand: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: PC.white,
+    letterSpacing: -0.5,
   },
   heroRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    flex: 1,
+    marginTop: 24,
+    paddingRight: 8,
   },
 
-  avatarWrap: { position: 'relative' },
+  avatarWrap: {
+    width: 86,
+    height: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
   avatar: {
-    width: 72,
-    height: 72,
+    width: 74,
+    height: 74,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -364,105 +411,173 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '800',
     color: PC.white,
-    letterSpacing: -0.5,
+    letterSpacing: 0.3,
   },
   onlineDot: {
     position: 'absolute',
-    bottom: -3,
-    right: -3,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#00D97E',
-    borderWidth: 2.5,
-    borderColor: PC.brand,
+    right: 3,
+    bottom: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#2ED67B',
+    borderWidth: 2,
+    borderColor: PC.white,
   },
-
   editBtn: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 26,
-    height: 26,
+    top: 4,
+    right: -2,
+    width: 28,
+    height: 28,
     borderRadius: 10,
     backgroundColor: PC.white,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowColor: '#7B3917',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
     elevation: 4,
-    gap: 1,
   },
-  pencilBody: {
-    width: 8,
-    height: 10,
-    borderWidth: 1.5,
-    borderColor: PC.brand,
-    borderRadius: 1.5,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+  editBtnLine: {
+    width: 10,
+    height: 2.5,
+    borderRadius: 2,
+    backgroundColor: PC.brand,
   },
-  pencilTip: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderTopWidth: 5,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: PC.brand,
+  editBtnLineShort: {
+    width: 10,
+    height: 2.5,
+    borderRadius: 2,
+    backgroundColor: PC.brand,
+    marginTop: 3,
   },
 
-  heroInfo: { flex: 1 },
-  heroName: { fontSize: 20, fontWeight: '800', color: PC.white, letterSpacing: -0.4 },
-  heroPhone: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 3 },
+  heroInfo: {
+    flex: 1,
+    paddingLeft: 22,
+    paddingRight: 10,
+  },
+  heroName: {
+    fontSize: 25,
+    fontWeight: '800',
+    color: PC.white,
+    letterSpacing: -0.6,
+  },
+  heroPhone: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.78)',
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  heroEmail: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.68)',
+    marginTop: 5,
+  },
 
   statsStrip: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 14,
+    marginHorizontal: 14,
     backgroundColor: PC.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: PC.border,
+    borderColor: '#ECEEF3',
     overflow: 'hidden',
     shadowColor: '#111318',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  statCell: { flex: 1, paddingVertical: 14, alignItems: 'center' },
-  statCellBorder: { borderRightWidth: 1, borderRightColor: PC.border },
-  statVal: { fontSize: 19, fontWeight: '800', color: PC.ink },
-  statKey: { fontSize: 10, color: PC.muted, fontWeight: '600', marginTop: 3, letterSpacing: 0.2 },
+  statCell: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  statCellBorder: {
+    borderRightWidth: 1,
+    borderRightColor: '#F0F1F4',
+  },
+  statVal: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#111318',
+    letterSpacing: -0.3,
+  },
+  statKey: {
+    fontSize: 9,
+    color: '#8A8FA8',
+    fontWeight: '700',
+    marginTop: 4,
+    letterSpacing: 0.1,
+  },
 
   planStrip: {
-    marginHorizontal: 16,
+    marginHorizontal: 14,
     marginTop: 12,
-    backgroundColor: PC.brandSoft,
+    backgroundColor: '#FFF1E7',
     borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,107,43,0.18)',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,43,0.16)',
+    paddingHorizontal: 11,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
   },
-  planStarBox: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  planStarRay: { position: 'absolute', width: 2, height: 10, backgroundColor: PC.brand, borderRadius: 1, top: 1 },
-  planName: { fontSize: 14, fontWeight: '700', color: PC.ink },
-  planExp: { fontSize: 11, color: PC.muted, marginTop: 2 },
+  planIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: PC.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#D75922',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  planIconDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: PC.white,
+  },
+  planContent: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  planName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: PC.ink,
+    letterSpacing: -0.4,
+  },
+  planExp: {
+    fontSize: 10,
+    color: PC.muted,
+    marginTop: 3,
+    fontWeight: '500',
+  },
+  planAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  planActionText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: PC.brand,
+  },
   planChevron: {
     width: 7,
     height: 7,
-    borderTopWidth: 1.5,
-    borderRightWidth: 1.5,
+    borderTopWidth: 1.6,
+    borderRightWidth: 1.6,
     borderColor: PC.brand,
     transform: [{ rotate: '45deg' }],
-    marginLeft: 6,
+    marginLeft: 8,
   },
 });
