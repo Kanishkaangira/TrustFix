@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenWrapper from '../../Components/ScreenWrapper';
 
 import {
@@ -129,6 +129,9 @@ const profile = {
 };
 
 export default function ProfileMain({ onNavigate }) {
+  const { bottom } = useSafeAreaInsets();
+  const scrollBottomPadding = bottom + 96;
+
   const initials = profile.name
     .split(' ')
     .filter(Boolean)
@@ -183,7 +186,10 @@ export default function ProfileMain({ onNavigate }) {
         <ScrollView
           showsVerticalScrollIndicator={false}
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: scrollBottomPadding },
+          ]}
         >
           <View style={styles.statsStrip}>
             {[
@@ -351,7 +357,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
   },
-  scrollContent: { paddingTop: 28, paddingBottom: 32 },
+  scrollContent: { paddingTop: 28 },
 
   hero: {
     backgroundColor: PC.brand,

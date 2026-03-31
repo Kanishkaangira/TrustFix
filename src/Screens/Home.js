@@ -4,7 +4,7 @@
 //  Matches the app screenshot UI exactly
 // ════════════════════════════════════════════════════════════════
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,10 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import ScreenWrapper from '../Components/ScreenWrapper';
+import {
+  getDefaultAddress,
+  subscribeToAddresses,
+} from '../store/addressStore';
 
 // ─── Screen width used for responsive card sizing ─────────────
 const { width } = Dimensions.get('window');
@@ -79,7 +83,40 @@ const BADGES = [
 // ════════════════════════════════════════════════════════════════
 //  HOME SCREEN COMPONENT
 // ════════════════════════════════════════════════════════════════
+const FALLBACK_ADDRESS = {
+  label: 'Home',
+  address: 'Select your default address',
+};
+
+const AddressDropdownIcon = ({ expanded = false, disabled = false }) => (
+  <View
+    style={[
+      styles.locationToggleIcon,
+      expanded && styles.locationToggleIconExpanded,
+      disabled && styles.locationToggleIconDisabled,
+    ]}
+  >
+    <View style={[styles.locationToggleStroke, styles.locationToggleStrokeLeft]} />
+    <View style={[styles.locationToggleStroke, styles.locationToggleStrokeRight]} />
+  </View>
+);
+
 const Home = ({ navigation }) => {
+  const [defaultAddress, setDefaultAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
+  const [isAddressExpanded, setIsAddressExpanded] = useState(false);
+  const [isAddressLong, setIsAddressLong] = useState(false);
+  const addressText = defaultAddress?.address || FALLBACK_ADDRESS.address;
+
+  useEffect(() => subscribeToAddresses((nextAddresses) => {
+    const nextDefaultAddress = nextAddresses.find((item) => item.isDefault) || nextAddresses[0] || FALLBACK_ADDRESS;
+    setDefaultAddress(nextDefaultAddress);
+  }), []);
+
+  useEffect(() => {
+    setIsAddressExpanded(false);
+    setIsAddressLong(false);
+  }, [addressText]);
+
   const openSearch = () => {
     navigation.getParent()?.navigate('Search');
   };
@@ -95,6 +132,14 @@ const Home = ({ navigation }) => {
       service,
       serviceTrigger: Date.now(),
     });
+  };
+
+  const toggleAddressExpansion = () => {
+    if (!isAddressLong) {
+      return;
+    }
+
+    setIsAddressExpanded((prev) => !prev);
   };
 
   return (
@@ -137,11 +182,40 @@ const Home = ({ navigation }) => {
         </View>
 
         {/* ── Tappable location row ── */}
-        <TouchableOpacity style={styles.locationRow}>
+        <View style={[styles.locationRow, isAddressExpanded && styles.locationRowExpanded]}>
           <Icon name="map-marker" size={14} color="rgba(255,255,255,0.9)" />
-          <Text style={styles.locationText}>Gali No.11, Adarsh Colony, Pal..</Text>
-          <Icon name="chevron-down" size={14} color="rgba(255,255,255,0.7)" />
-        </TouchableOpacity>
+          <View style={styles.locationTextWrap}>
+            <Text
+              style={styles.locationTextMeasure}
+              onTextLayout={({ nativeEvent }) => {
+                const nextIsLong = nativeEvent.lines.length > 1;
+                setIsAddressLong((prev) => (prev === nextIsLong ? prev : nextIsLong));
+              }}
+            >
+              {addressText}
+            </Text>
+            <Text
+              style={[styles.locationText, isAddressExpanded && styles.locationTextExpanded]}
+              numberOfLines={isAddressExpanded ? undefined : 1}
+            >
+              {addressText}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.locationToggleBtn,
+              !isAddressLong && styles.locationToggleBtnDisabled,
+            ]}
+            activeOpacity={isAddressLong ? 0.8 : 1}
+            onPress={toggleAddressExpansion}
+            disabled={!isAddressLong}
+          >
+            <AddressDropdownIcon
+              expanded={isAddressExpanded}
+              disabled={!isAddressLong}
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* ── Greeting + BIG name + tagline ── */}
         <View style={styles.greetBlock}>
@@ -388,11 +462,69 @@ const styles = StyleSheet.create({
     gap: 4,
     marginBottom: 22,
   },
+  locationRowExpanded: {
+    alignItems: 'flex-start',
+  },
+  locationTextWrap: {
+    flex: 1,
+    minWidth: 0,
+    position: 'relative',
+  },
   locationText: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '600',
     marginHorizontal: 2,
+  },
+  locationTextExpanded: {
+    lineHeight: 18,
+  },
+  locationTextMeasure: {
+    position: 'absolute',
+    left: 2,
+    right: 2,
+    opacity: 0,
+    zIndex: -1,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  locationToggleBtn: {
+    width: 28,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+    marginTop: 1,
+  },
+  locationToggleBtnDisabled: {
+    opacity: 0.5,
+  },
+  locationToggleIcon: {
+    width: 20,
+    height: 12,
+    position: 'relative',
+  },
+  locationToggleIconExpanded: {
+    transform: [{ rotate: '180deg' }],
+  },
+  locationToggleIconDisabled: {
+    opacity: 0.7,
+  },
+  locationToggleStroke: {
+    position: 'absolute',
+    top: 4,
+    width: 12,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  locationToggleStrokeLeft: {
+    left: 0,
+    transform: [{ rotate: '45deg' }],
+  },
+  locationToggleStrokeRight: {
+    right: 0,
+    transform: [{ rotate: '-45deg' }],
   },
 
   // Greeting block — the BIG name section
