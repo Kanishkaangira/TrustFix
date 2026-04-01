@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,8 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import BookingOrangeHero from '../../Components/BookingOrangeHero';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../../theme';
+import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
+import { useAppTheme } from '../../theme/ThemeProvider';
 
 const { width } = Dimensions.get('window');
 
@@ -128,7 +129,7 @@ const BOOKING_PERKS = [
   },
 ];
 
-function ServiceCard({ service, isSelected, onPress }) {
+function ServiceCard({ service, isSelected, onPress, styles }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const onPressIn = () =>
@@ -229,6 +230,9 @@ function ServiceCard({ service, isSelected, onPress }) {
 }
 
 export default function SelectService({ onSelect }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [selected, setSelected] = useState(null);
 
   const handleTap = (service) => {
@@ -270,6 +274,7 @@ export default function SelectService({ onSelect }) {
                 service={service}
                 isSelected={selected === service.id}
                 onPress={() => handleTap(service)}
+                styles={styles}
               />
             ))}
           </View>
@@ -302,15 +307,15 @@ export default function SelectService({ onSelect }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
 
   bodyScroll: {
     flex: 1,
-    backgroundColor: '#FCFBF8',
+    backgroundColor: colors.backgroundAlt,
     marginTop: -18,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -321,7 +326,7 @@ const styles = StyleSheet.create({
     paddingBottom: TAB_BAR_H + SPACING.sm,
   },
   body: {
-    backgroundColor: '#FCFBF8',
+    backgroundColor: colors.backgroundAlt,
     paddingHorizontal: H_PAD,
     paddingTop: 14,
     paddingBottom: SPACING.lg,
@@ -348,14 +353,14 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 24,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.6,
     lineHeight: 28,
   },
   sectionSubtitle: {
     fontSize: 13,
     lineHeight: 20,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     marginTop: 8,
   },
 
@@ -368,10 +373,10 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_W,
     height: CARD_H,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 22,
     borderWidth: 1.5,
-    borderColor: '#E7EAF0',
+    borderColor: colors.border,
     overflow: 'hidden',
     ...SHADOW.card,
   },
@@ -414,14 +419,14 @@ const styles = StyleSheet.create({
   cardLabel: {
     fontSize: 16,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 6,
     letterSpacing: 0.1,
   },
   cardHelper: {
     fontSize: 12,
     lineHeight: 18,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     minHeight: 36,
   },
   cardFooter: {
@@ -433,7 +438,7 @@ const styles = StyleSheet.create({
   },
   cardPriceLabel: {
     fontSize: 10,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     fontWeight: FONT.semibold,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
@@ -441,7 +446,7 @@ const styles = StyleSheet.create({
   },
   cardPrice: {
     fontSize: 18,
-    color: COLORS.ink,
+    color: colors.ink,
     fontWeight: FONT.black,
     letterSpacing: -0.3,
   },
@@ -455,11 +460,11 @@ const styles = StyleSheet.create({
   },
 
   assuranceCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#ECEEF2',
+    borderColor: colors.border,
     ...SHADOW.card,
   },
   assuranceEyebrow: {
@@ -476,7 +481,7 @@ const styles = StyleSheet.create({
   },
   assuranceItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: '#EEF1F4',
+    borderBottomColor: colors.borderLight,
   },
   assuranceIconWrap: {
     width: 40,
@@ -492,12 +497,12 @@ const styles = StyleSheet.create({
   assuranceItemTitle: {
     fontSize: 14,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 4,
   },
   assuranceText: {
     fontSize: 12.5,
     lineHeight: 18,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
   },
 });

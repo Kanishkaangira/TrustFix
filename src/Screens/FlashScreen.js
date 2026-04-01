@@ -1,85 +1,95 @@
-// ════════════════════════════════════════════════════════════════
-//  TrustFix — Flash Screen
-//  NO react-native-svg dependency — pure RN Views + LinearGradient
-// ════════════════════════════════════════════════════════════════
-
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Animated, StatusBar, Dimensions,
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+  StatusBar,
+  Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
+import { getThemeColors } from '../theme';
+import { useAppTheme } from '../theme/ThemeProvider';
+
 const { width, height } = Dimensions.get('window');
 
-const C = {
-  coral:     '#FF6B35',
-  coralDeep: '#E8531A',
-  coralMid:  '#FF7A45',
-  coralLight:'#FF9262',
-  bgLight:   '#FFF8F5',
-  textDark:  '#1A1A2E',
-  textMuted: '#9CA3AF',
-  white:     '#FFFFFF',
-};
+function WrenchView() {
+  return (
+    <View style={wrenchStyles.wrap}>
+      <View style={wrenchStyles.handle} />
+      <View style={wrenchStyles.jawTop} />
+      <View style={wrenchStyles.jawBot} />
+    </View>
+  );
+}
 
-// ── Wrench drawn with plain Views ─────────────────────────────
-const WrenchView = () => (
-  <View style={w.wrap}>
-    {/* Handle (vertical bar) */}
-    <View style={w.handle} />
-    {/* Top jaw */}
-    <View style={w.jawTop} />
-    {/* Bottom jaw */}
-    <View style={w.jawBot} />
-  </View>
-);
-
-const WRENCH_ROTATE = '-30deg';
-
-const w = StyleSheet.create({
+const wrenchStyles = StyleSheet.create({
   wrap: {
-    width: 44, height: 44,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    transform: [{ rotate: WRENCH_ROTATE }],
+    transform: [{ rotate: '-30deg' }],
   },
   handle: {
     position: 'absolute',
-    width: 10, height: 30,
+    width: 10,
+    height: 30,
     borderRadius: 5,
     backgroundColor: 'rgba(255,255,255,0.92)',
-    top: 7, left: 17,
+    top: 7,
+    left: 17,
   },
   jawTop: {
     position: 'absolute',
-    width: 24, height: 9,
+    width: 24,
+    height: 9,
     borderRadius: 4.5,
     backgroundColor: 'rgba(255,255,255,0.92)',
-    top: 7, left: 10,
+    top: 7,
+    left: 10,
   },
   jawBot: {
     position: 'absolute',
-    width: 18, height: 8,
+    width: 18,
+    height: 8,
     borderRadius: 4,
     backgroundColor: 'rgba(255,255,255,0.78)',
-    top: 18, left: 10,
+    top: 18,
+    left: 10,
   },
 });
 
-// ════════════════════════════════════════════════════════════════
-const FlashScreen = ({ navigation }) => {
-  const iconScale   = useRef(new Animated.Value(0)).current;
+const createPalette = (colors, isDark) => ({
+  coral: '#FF6B35',
+  coralDeep: isDark ? '#E55B2A' : '#E8531A',
+  coralMid: '#FF7A45',
+  coralLight: '#FF9262',
+  bg: colors.background,
+  textDark: colors.ink,
+  textMuted: colors.inkMuted,
+  grid: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(150,130,110,0.12)',
+  glow: isDark ? 'rgba(255,122,69,0.24)' : 'rgba(255,107,53,0.20)',
+  shadow: isDark ? 'rgba(255,107,53,0.28)' : 'rgba(232,83,26,0.25)',
+});
+
+export default function FlashScreen({ navigation }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const palette = useMemo(() => createPalette(colors, isDark), [colors, isDark]);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+  const iconScale = useRef(new Animated.Value(0)).current;
   const iconOpacity = useRef(new Animated.Value(0)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
-  const glowPulse   = useRef(new Animated.Value(0.18)).current;
+  const glowPulse = useRef(new Animated.Value(0.18)).current;
   const textOpacity = useRef(new Animated.Value(0)).current;
-  const textY       = useRef(new Animated.Value(22)).current;
-  const tagOpacity  = useRef(new Animated.Value(0)).current;
+  const textY = useRef(new Animated.Value(22)).current;
+  const tagOpacity = useRef(new Animated.Value(0)).current;
   const pillOpacity = useRef(new Animated.Value(0)).current;
-  const pillY       = useRef(new Animated.Value(10)).current;
+  const pillY = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
-    // Glow breathes forever
     Animated.loop(
       Animated.sequence([
         Animated.timing(glowPulse, { toValue: 0.30, duration: 1400, useNativeDriver: true }),
@@ -87,7 +97,6 @@ const FlashScreen = ({ navigation }) => {
       ])
     ).start();
 
-    // Entrance sequence
     Animated.sequence([
       Animated.delay(300),
       Animated.parallel([
@@ -98,132 +107,173 @@ const FlashScreen = ({ navigation }) => {
       Animated.delay(150),
       Animated.parallel([
         Animated.timing(textOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.timing(textY,       { toValue: 0, duration: 400, useNativeDriver: true }),
+        Animated.timing(textY, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]),
       Animated.delay(100),
       Animated.timing(tagOpacity, { toValue: 1, duration: 380, useNativeDriver: true }),
       Animated.delay(200),
       Animated.parallel([
         Animated.timing(pillOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(pillY,       { toValue: 0, duration: 300, useNativeDriver: true }),
+        Animated.timing(pillY, { toValue: 0, duration: 300, useNativeDriver: true }),
       ]),
     ]).start();
 
-    const t = setTimeout(() => navigation.replace('Onboarding'), 2800);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => navigation.replace('Onboarding'), 2800);
+    return () => clearTimeout(timer);
   }, []);
 
   return (
-    <View style={s.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bgLight} />
+    <View style={styles.container}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={palette.bg} />
 
-      {/* Grid background */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {Array.from({ length: 22 }).map((_, i) => (
-          <View key={`h${i}`} style={[s.gridH, { top: i * 40 }]} />
+        {Array.from({ length: Math.ceil(height / 40) }).map((_, index) => (
+          <View key={`h${index}`} style={[styles.gridH, { top: index * 40 }]} />
         ))}
-        {Array.from({ length: 12 }).map((_, i) => (
-          <View key={`v${i}`} style={[s.gridV, { left: i * 40 }]} />
+        {Array.from({ length: Math.ceil(width / 40) }).map((_, index) => (
+          <View key={`v${index}`} style={[styles.gridV, { left: index * 40 }]} />
         ))}
       </View>
 
-      {/* Glow ring */}
-      <Animated.View style={[s.glowRing, { opacity: glowOpacity }]}>
-        <Animated.View style={[s.glowCore, { opacity: glowPulse }]} />
+      <Animated.View style={[styles.glowRing, { opacity: glowOpacity }]}>
+        <Animated.View style={[styles.glowCore, { opacity: glowPulse }]} />
       </Animated.View>
 
-      {/* App Icon */}
-      <Animated.View style={[s.iconWrap, {
-        opacity: iconOpacity,
-        transform: [{ scale: iconScale }],
-      }]}>
+      <Animated.View
+        style={[
+          styles.iconWrap,
+          {
+            opacity: iconOpacity,
+            transform: [{ scale: iconScale }],
+          },
+        ]}
+      >
         <LinearGradient
-          colors={[C.coralLight, C.coral, C.coralDeep]}
+          colors={[palette.coralLight, palette.coral, palette.coralDeep]}
           start={{ x: 0.15, y: 0 }}
           end={{ x: 0.85, y: 1 }}
-          style={s.iconGrad}
+          style={styles.iconGrad}
         >
           <WrenchView />
         </LinearGradient>
-        <View style={s.iconShadow} />
+        <View style={styles.iconShadow} />
       </Animated.View>
 
-      {/* App name */}
       <Animated.View style={{ opacity: textOpacity, transform: [{ translateY: textY }] }}>
-        <Text style={s.appName}>
-          <Text style={s.trust}>Trust</Text>
-          <Text style={s.fix}>Fix</Text>
+        <Text style={styles.appName}>
+          <Text style={styles.trust}>Trust</Text>
+          <Text style={styles.fix}>Fix</Text>
         </Text>
       </Animated.View>
 
-      {/* Tagline */}
-      <Animated.Text style={[s.tagline, { opacity: tagOpacity }]}>
+      <Animated.Text style={[styles.tagline, { opacity: tagOpacity }]}>
         India's Trust-First{'\n'}Home Service Platform
       </Animated.Text>
 
-      {/* Bottom pill */}
-      <Animated.View style={[s.pillWrap, {
-        opacity: pillOpacity,
-        transform: [{ translateY: pillY }],
-      }]}>
-        <View style={s.pill} />
+      <Animated.View
+        style={[
+          styles.pillWrap,
+          {
+            opacity: pillOpacity,
+            transform: [{ translateY: pillY }],
+          },
+        ]}
+      >
+        <View style={styles.pill} />
       </Animated.View>
     </View>
   );
-};
+}
 
-export default FlashScreen;
-
-const s = StyleSheet.create({
+const createStyles = (palette) => StyleSheet.create({
   container: {
-    flex: 1, backgroundColor: C.bgLight,
-    alignItems: 'center', justifyContent: 'center',
+    flex: 1,
+    backgroundColor: palette.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gridH: {
-    position: 'absolute', left: 0, right: 0,
-    height: 0.5, backgroundColor: 'rgba(150,130,110,0.12)',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 0.5,
+    backgroundColor: palette.grid,
   },
   gridV: {
-    position: 'absolute', top: 0, bottom: 0,
-    width: 0.5, backgroundColor: 'rgba(150,130,110,0.12)',
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 0.5,
+    backgroundColor: palette.grid,
   },
   glowRing: {
     position: 'absolute',
-    width: 240, height: 240, borderRadius: 120,
-    alignItems: 'center', justifyContent: 'center',
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   glowCore: {
-    width: 180, height: 180, borderRadius: 90,
-    backgroundColor: 'rgba(255,107,53,0.20)',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: palette.glow,
   },
   iconWrap: {
-    marginBottom: 30, alignItems: 'center',
+    marginBottom: 30,
+    alignItems: 'center',
   },
   iconGrad: {
-    width: 100, height: 100, borderRadius: 26,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: C.coralDeep,
+    width: 100,
+    height: 100,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: palette.coralDeep,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.40, shadowRadius: 22, elevation: 14,
+    shadowOpacity: 0.4,
+    shadowRadius: 22,
+    elevation: 14,
   },
   iconShadow: {
-    position: 'absolute', bottom: -10,
-    width: 72, height: 14, borderRadius: 36,
-    backgroundColor: 'rgba(232,83,26,0.25)',
+    position: 'absolute',
+    bottom: -10,
+    width: 72,
+    height: 14,
+    borderRadius: 36,
+    backgroundColor: palette.shadow,
   },
   appName: {
-    fontSize: 44, letterSpacing: -1.5,
-    marginBottom: 10, includeFontPadding: false,
+    fontSize: 44,
+    letterSpacing: -1.5,
+    marginBottom: 10,
+    includeFontPadding: false,
   },
-  trust: { fontWeight: '800', color: C.textDark },
-  fix:   { fontWeight: '800', color: C.coral },
+  trust: {
+    fontWeight: '800',
+    color: palette.textDark,
+  },
+  fix: {
+    fontWeight: '800',
+    color: palette.coral,
+  },
   tagline: {
-    fontSize: 15, color: C.textMuted,
-    textAlign: 'center', lineHeight: 23, fontWeight: '500',
+    fontSize: 15,
+    color: palette.textMuted,
+    textAlign: 'center',
+    lineHeight: 23,
+    fontWeight: '500',
   },
-  pillWrap: { position: 'absolute', bottom: 36 },
+  pillWrap: {
+    position: 'absolute',
+    bottom: 36,
+  },
   pill: {
-    width: 48, height: 4, borderRadius: 2,
-    backgroundColor: C.coral, opacity: 0.7,
+    width: 48,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: palette.coral,
+    opacity: 0.7,
   },
 });

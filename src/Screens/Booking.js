@@ -24,11 +24,12 @@ import SelectSlot     from './BookingFlow/SelectSlot';
 import PriceSummary   from './BookingFlow/PriceSummary';
 import ScreenWrapper  from '../Components/ScreenWrapper';
 
-import { COLORS, FONT, SPACING } from '../theme';
+import { FONT, SPACING, getThemeColors } from '../theme';
 import {
   getDefaultAddress,
   subscribeToAddresses,
 } from '../state/addressStore';
+import { useAppTheme } from '../theme/ThemeProvider';
 
 // ─── Step constants ────────────────────────────────────────────
 const STEPS = {
@@ -56,6 +57,9 @@ const PROFILE_BRAND_ORANGE = '#FF6B2B';
 
 // ─── Main controller ───────────────────────────────────────────
 export default function Bookings({ route, navigation }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const preService = route?.params?.service || null;
   const serviceTrigger = route?.params?.serviceTrigger || null;
   const returnedAddress = route?.params?.selectedAddress || null;
@@ -269,13 +273,13 @@ export default function Bookings({ route, navigation }) {
   const progressStep = step;
   const showHeader   = step !== STEPS.SELECT_SERVICE;
   const isStartingStep = step === STEPS.SELECT_SERVICE;
-  const wrapperTopColor = isStartingStep ? PROFILE_BRAND_ORANGE : '#FFFFFF';
-  const statusBarStyle = isStartingStep ? 'light-content' : 'dark-content';
+  const wrapperTopColor = isStartingStep ? PROFILE_BRAND_ORANGE : colors.surface;
+  const statusBarStyle = isStartingStep ? 'light-content' : (isDark ? 'light-content' : 'dark-content');
 
   return (
     <ScreenWrapper
       topColor={wrapperTopColor}
-      bottomColor={COLORS.background}
+      bottomColor={colors.background}
       statusBarStyle={statusBarStyle}
     >
       <SafeAreaView style={[styles.safe, isStartingStep && styles.safeStarting]}>
@@ -301,7 +305,7 @@ export default function Bookings({ route, navigation }) {
               <Icon
                 name="chevron-left"
                 size={28}
-                color={service?.accentColor || COLORS.primary}
+                color={service?.accentColor || colors.primary}
               />
             </TouchableOpacity>
 
@@ -311,7 +315,7 @@ export default function Bookings({ route, navigation }) {
                 <Text
                   style={[
                     styles.serviceSummaryName,
-                    { color: service?.accentColor || COLORS.primary },
+                    { color: service?.accentColor || colors.primary },
                   ]}
                   numberOfLines={1}
                 >
@@ -385,11 +389,11 @@ export default function Bookings({ route, navigation }) {
 }
 
 // ─── Styles ────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+const createStyles = (colors) => StyleSheet.create({
 
   safe: {
     flex:            1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   safeStarting: {
     backgroundColor: PROFILE_BRAND_ORANGE,
@@ -397,10 +401,10 @@ const styles = StyleSheet.create({
 
   // One unified white card — header + dots + bar, no internal gaps
   topBlock: {
-    backgroundColor: '#FBFCFE',
-    shadowColor:     '#000',
+    backgroundColor: colors.surfaceMuted,
+    shadowColor:     colors.black,
     shadowOffset:    { width: 0, height: 2 },
-    shadowOpacity:   0.07,
+    shadowOpacity:   colors.background === '#0D1218' ? 0.24 : 0.07,
     shadowRadius:    6,
     elevation:       4,
   },
@@ -429,7 +433,7 @@ const styles = StyleSheet.create({
     flex:            1,
     flexDirection:   'row',
     alignItems:      'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     paddingLeft:     6,
     paddingRight:    10,
     paddingVertical: 6,
@@ -437,7 +441,7 @@ const styles = StyleSheet.create({
     borderWidth:     1.5,
     marginHorizontal: 12,
     minWidth:        0,
-    shadowColor:     '#111318',
+    shadowColor:     colors.black,
     shadowOffset:    { width: 0, height: 3 },
     shadowOpacity:   0.05,
     shadowRadius:    8,
@@ -468,7 +472,7 @@ const styles = StyleSheet.create({
   pillEyebrow: {
     fontSize:      10,
     fontWeight:    FONT.bold,
-    color:         COLORS.inkMuted,
+    color:         colors.inkMuted,
     letterSpacing: 0.7,
     textTransform: 'uppercase',
     marginBottom:  3,
@@ -478,7 +482,7 @@ const styles = StyleSheet.create({
   pillName: {
     fontSize:      15,
     fontWeight:    FONT.black,
-    color:         COLORS.ink,
+    color:         colors.ink,
     letterSpacing: -0.2,
     flexShrink:    1,
   },
@@ -533,10 +537,10 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   inlineBrandTrust: {
-    color: COLORS.ink,
+    color: colors.ink,
   },
   inlineBrandFix: {
-    color: COLORS.primary,
+    color: colors.primary,
   },
 
   // ── Step dots ────────────────────────────────────────────────
@@ -556,7 +560,7 @@ const styles = StyleSheet.create({
     left:            48,
     right:           48,
     height:          1,
-    backgroundColor: COLORS.border,
+    backgroundColor: colors.border,
   },
 
   stepItem: {
@@ -568,61 +572,61 @@ const styles = StyleSheet.create({
     width:           18,
     height:          18,
     borderRadius:    9,
-    backgroundColor: COLORS.border,
+    backgroundColor: colors.border,
     alignItems:      'center',
     justifyContent:  'center',
     marginBottom:    5,
   },
   stepDotDone: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
   },
   stepDotActive: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth:     2,
-    borderColor:     COLORS.primary,
+    borderColor:     colors.primary,
   },
   stepDotInner: {
     width:           7,
     height:          7,
     borderRadius:    3.5,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
   },
   stepDotActiveInner: {
     width:           7,
     height:          7,
     borderRadius:    3.5,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
   },
 
   stepLabel: {
     fontSize:      10,
     fontWeight:    FONT.medium,
-    color:         COLORS.inkMuted,
+    color:         colors.inkMuted,
     letterSpacing: 0.2,
     textAlign:     'center',
   },
   stepLabelActive: {
-    color:      COLORS.primary,
+    color:      colors.primary,
     fontWeight: FONT.bold,
   },
   stepLabelDone: {
-    color: COLORS.primary,
+    color: colors.primary,
   },
 
   // ── Fill bar ─────────────────────────────────────────────────
   progressBar: {
     height:          2,
-    backgroundColor: COLORS.border,
+    backgroundColor: colors.border,
   },
   progressFill: {
     height:          2,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
   },
 
   // ── Content ──────────────────────────────────────────────────
   content: {
     flex:            1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
 
 });

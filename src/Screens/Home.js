@@ -4,7 +4,7 @@
 //  Matches the app screenshot UI exactly
 // ════════════════════════════════════════════════════════════════
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -23,48 +23,48 @@ import {
   getProfile,
   subscribeToProfile,
 } from '../state/profileStore';
+import { useAppTheme } from '../theme/ThemeProvider';
 
 // ─── Screen width used for responsive card sizing ─────────────
 // ════════════════════════════════════════════════════════════════
 //  DESIGN TOKENS
 //  All colors in one place — change here to retheme the screen
 // ════════════════════════════════════════════════════════════════
-const C = {
-  // Brand — Coral / Orange (header gradient + CTAs)
-  coral:        '#FF6B35',
-  coralDeep:    '#E8531A',
-  coralLight:   '#FF9262',
-  coralPale:    '#FFF0EB',   // very light tint for tags / bg accents
-
-  // Body backgrounds — light cream theme
-  bgBody:       '#FAF9F6',   // cream white — main scroll background
-  bgCard:       '#FFFFFF',   // white cards
-  bgInput:      '#FFFFFF',   // search bar
-
-  // Text hierarchy
-  textPrimary:  '#1A1A2E',   // near-black — headings & names
-  textSecondary:'#6B7280',   // mid grey  — descriptions
-  textTertiary: '#9CA3AF',   // light grey — prices, meta, placeholders
-
-  // Service icon colors (each service gets its own tint pair)
-  skyBg:        '#EFF6FF',   skyIcon:    '#3B82F6',   // AC — blue
-  greenBg:      '#F0FDF4',   greenIcon:  '#22C55E',   // Plumbing — green
-  amberBg:      '#FFFBEB',   amberIcon:  '#F59E0B',   // Electrical — amber
-  violetBg:     '#F5F3FF',   violetIcon: '#8B5CF6',   // Carpenter — violet
-  roseBg:       '#FFF1F2',   roseIcon:   '#F43F5E',   // Painting — rose
-  tealBg:       '#F0FDFA',   tealIcon:   '#14B8A6',   // Cleaning — teal
-
-  // Misc
-  white:        '#FFFFFF',
-  border:       '#F3F4F6',
-};
+const getHomeColors = (isDark) => ({
+  coral: '#FF6B35',
+  coralDeep: isDark ? '#B33F16' : '#E8531A',
+  coralLight: '#FF9262',
+  coralPale: isDark ? '#35241D' : '#FFF0EB',
+  bgBody: isDark ? '#0F141B' : '#FAF9F6',
+  bgCard: isDark ? '#161D26' : '#FFFFFF',
+  bgInput: isDark ? '#161D26' : '#FFFFFF',
+  textPrimary: isDark ? '#F5F7FB' : '#1A1A2E',
+  textSecondary: isDark ? '#C2CBD8' : '#6B7280',
+  textTertiary: isDark ? '#8F9AAD' : '#9CA3AF',
+  skyBg: isDark ? '#1A2942' : '#EFF6FF',
+  skyIcon: '#3B82F6',
+  greenBg: isDark ? '#173526' : '#F0FDF4',
+  greenIcon: '#22C55E',
+  amberBg: isDark ? '#362914' : '#FFFBEB',
+  amberIcon: '#F59E0B',
+  violetBg: isDark ? '#2B2341' : '#F5F3FF',
+  violetIcon: '#8B5CF6',
+  roseBg: isDark ? '#3B2128' : '#FFF1F2',
+  roseIcon: '#F43F5E',
+  tealBg: isDark ? '#193633' : '#F0FDFA',
+  tealIcon: '#14B8A6',
+  white: '#FFFFFF',
+  border: isDark ? '#273241' : '#F3F4F6',
+  shadow: '#000000',
+  isDark,
+});
 
 // ════════════════════════════════════════════════════════════════
 //  STATIC DATA — all the items rendered on screen
 // ════════════════════════════════════════════════════════════════
 
 // 5 services + 1 "More" card = 2 rows of 3
-const SERVICES = [
+const getServices = (C) => [
   { id: '1', icon: 'snowflake',          name: 'AC Repair',  price: '₹349', iconColor: C.skyIcon,    bg: C.skyBg,    bookingService: { id: 'ac', label: 'AC Repair', shortLabel: 'AC Repair', icon: 'snowflake', accentColor: '#2563EB', iconColor: '#2563EB', lightColor: '#DBEAFE', startingAt: '₹349' } },
   { id: '2', icon: 'pipe-wrench',        name: 'Plumbing',   price: '₹199', iconColor: C.greenIcon,  bg: C.greenBg,  bookingService: { id: 'plumbing', label: 'Plumbing', shortLabel: 'Plumbing', icon: 'pipe-wrench', accentColor: '#16A34A', iconColor: '#16A34A', lightColor: '#DCFCE7', startingAt: '₹199' } },
   { id: '3', icon: 'lightning-bolt',     name: 'Electrical', price: '₹249', iconColor: C.amberIcon,  bg: C.amberBg,  bookingService: { id: 'electrician', label: 'Electrical', shortLabel: 'Electrician', icon: 'lightning-bolt', accentColor: '#D97706', iconColor: '#D97706', lightColor: '#FEF3C7', startingAt: '₹249' } },
@@ -73,7 +73,7 @@ const SERVICES = [
 ];
 
 // 4 trust badges shown in horizontal scroll strip
-const BADGES = [
+const getBadges = (C) => [
   { icon: 'shield-check-outline', label: 'Verified Pros',    color: '#22C55E', bg: '#F0FDF4' },
   { icon: 'currency-inr',         label: '₹0 Visit Charge',  color: C.coral,   bg: C.coralPale },
   { icon: 'map-marker-check',     label: 'Live Tracking',    color: '#3B82F6', bg: '#EFF6FF' },
@@ -110,7 +110,7 @@ const getProfileInitials = (name = '') => {
   return initials || 'RS';
 };
 
-const AddressDropdownIcon = ({ expanded = false, disabled = false }) => (
+const AddressDropdownIcon = ({ expanded = false, disabled = false, styles }) => (
   <View
     style={[
       styles.locationToggleIcon,
@@ -124,6 +124,11 @@ const AddressDropdownIcon = ({ expanded = false, disabled = false }) => (
 );
 
 const Home = ({ navigation }) => {
+  const { isDark } = useAppTheme();
+  const C = useMemo(() => getHomeColors(isDark), [isDark]);
+  const styles = useMemo(() => createStyles(C), [C]);
+  const services = useMemo(() => getServices(C), [C]);
+  const badges = useMemo(() => getBadges(C), [C]);
   const [defaultAddress, setDefaultAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
   const [profile, setProfile] = useState(() => getProfile());
   const [isAddressExpanded, setIsAddressExpanded] = useState(false);
@@ -243,6 +248,7 @@ const Home = ({ navigation }) => {
               <AddressDropdownIcon
                 expanded={isAddressExpanded}
                 disabled={!isAddressLong}
+                styles={styles}
               />
             </TouchableOpacity>
           </View>
@@ -335,7 +341,7 @@ const Home = ({ navigation }) => {
             </TouchableOpacity>
           </View>
           <View style={styles.servicesGrid}>
-            {SERVICES.map((svc) => (
+            {services.map((svc) => (
               <TouchableOpacity
                 key={svc.id}
                 style={styles.svcCard}
@@ -389,7 +395,7 @@ const Home = ({ navigation }) => {
           style={styles.badgesScroll}
           contentContainerStyle={styles.badgesContent}
         >
-          {BADGES.map((b, i) => (
+          {badges.map((b, i) => (
             <View key={i} style={styles.badge}>
               <View style={[styles.badgeIcon, { backgroundColor: b.bg }]}>
                 <Icon name={b.icon} size={18} color={b.color} />
@@ -413,7 +419,7 @@ export default Home;
 //  STYLES
 //  Ordered top-to-bottom matching the JSX layout above
 // ════════════════════════════════════════════════════════════════
-const styles = StyleSheet.create({
+const createStyles = (C) => StyleSheet.create({
 
   // ── HEADER ──────────────────────────────────────────────────
   headerGradient: {

@@ -15,6 +15,7 @@ import HelpScreen from './ProfileFlow/HelpScreen';
 import AboutScreen from './ProfileFlow/AboutScreen';
 import ShareScreen from './ProfileFlow/ShareScreen';
 import SubscriptionScreen from './ProfileFlow/SubscriptionScreen';
+import AppearanceScreen from './ProfileFlow/AppearanceScreen';
 import {
   getAddresses,
   subscribeToAddresses,
@@ -32,6 +33,7 @@ const SCREENS = {
   NOTIFICATIONS: 'notifications',
   ADDRESSES: 'addresses',
   PAYMENT: 'payment',
+  APPEARANCE: 'appearance',
   HELP: 'help',
   ABOUT: 'about',
   SHARE: 'share',
@@ -201,6 +203,8 @@ export default function Profile({ navigation, route }) {
         );
       case SCREENS.PAYMENT:
         return <PaymentScreen onBack={goBack} />;
+      case SCREENS.APPEARANCE:
+        return <AppearanceScreen onBack={goBack} />;
       case SCREENS.HELP:
         return <HelpScreen onBack={goBack} />;
       case SCREENS.ABOUT:

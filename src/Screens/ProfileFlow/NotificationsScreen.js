@@ -3,15 +3,16 @@ import { ScrollView } from 'react-native';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
 import {
-  PC,
   SectionLabel,
   SettingRow,
   RowDivider,
   SettingsCard,
   SubScreenShell,
+  useProfileColors,
 } from '../../Components/ProfileComponents';
 
 export default function NotificationsScreen({ onBack }) {
+  const colors = useProfileColors();
   const [bookingUpdates, setBookingUpdates] = useState(true);
   const [promos, setPromos] = useState(true);
   const [reminders, setReminders] = useState(false);
@@ -19,7 +20,11 @@ export default function NotificationsScreen({ onBack }) {
   const [sms, setSms] = useState(false);
 
   return (
-    <ScreenWrapper topColor={PC.brand} bottomColor={PC.bg} statusBarStyle="light-content">
+    <ScreenWrapper
+      topColor={colors.headerAccent}
+      bottomColor={colors.bg}
+      statusBarStyle="light-content"
+    >
       <SubScreenShell
         title="Notifications"
         onBack={onBack}
@@ -34,7 +39,7 @@ export default function NotificationsScreen({ onBack }) {
           <SectionLabel title="PUSH NOTIFICATIONS" />
           <SettingsCard>
             <SettingRow
-              iconBg={PC.brandSoft}
+              iconBg={colors.brandSoft}
               title="Booking Updates"
               subtitle="Confirmations, technician arrival"
               showToggle
@@ -44,7 +49,7 @@ export default function NotificationsScreen({ onBack }) {
             />
             <RowDivider />
             <SettingRow
-              iconBg={PC.brandSoft}
+              iconBg={colors.brandSoft}
               title="Offers & Promotions"
               subtitle="Deals, cashbacks, new services"
               showToggle
@@ -54,7 +59,7 @@ export default function NotificationsScreen({ onBack }) {
             />
             <RowDivider />
             <SettingRow
-              iconBg={PC.brandSoft}
+              iconBg={colors.brandSoft}
               title="Service Reminders"
               subtitle="Annual checkups, warranty alerts"
               showToggle
@@ -67,7 +72,7 @@ export default function NotificationsScreen({ onBack }) {
           <SectionLabel title="CHANNELS" />
           <SettingsCard>
             <SettingRow
-              iconBg={PC.greenSoft}
+              iconBg={colors.greenSoft}
               title="WhatsApp Alerts"
               subtitle="Service updates on WhatsApp"
               showToggle
@@ -77,7 +82,7 @@ export default function NotificationsScreen({ onBack }) {
             />
             <RowDivider />
             <SettingRow
-              iconBg={PC.blueSoft}
+              iconBg={colors.blueSoft}
               title="SMS Notifications"
               subtitle="OTPs and critical alerts only"
               showToggle

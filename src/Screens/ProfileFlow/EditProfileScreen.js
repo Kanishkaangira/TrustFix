@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,15 @@ import {
 } from 'react-native';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
-import { PC, SubScreenShell } from '../../Components/ProfileComponents';
+import {
+  SubScreenShell,
+  useProfileColors,
+} from '../../Components/ProfileComponents';
 import { INITIAL_PROFILE } from '../../state/profileStore';
 
-const InputField = ({
+function InputField({
+  colors,
+  styles,
   label,
   value,
   onChangeText,
@@ -23,22 +28,24 @@ const InputField = ({
   maxLength,
   editable = true,
   autoCapitalize = 'words',
-}) => (
-  <View style={styles.fieldWrap}>
-    <Text style={styles.fieldLabel}>{label}</Text>
-    <TextInput
-      style={[styles.fieldInput, !editable && styles.fieldInputDisabled]}
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      placeholderTextColor={PC.muted}
-      keyboardType={keyboardType || 'default'}
-      maxLength={maxLength}
-      editable={editable}
-      autoCapitalize={autoCapitalize}
-    />
-  </View>
-);
+}) {
+  return (
+    <View style={styles.fieldWrap}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[styles.fieldInput, !editable && styles.fieldInputDisabled]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        keyboardType={keyboardType || 'default'}
+        maxLength={maxLength}
+        editable={editable}
+        autoCapitalize={autoCapitalize}
+      />
+    </View>
+  );
+}
 
 const splitName = (fullName = '') => {
   const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
@@ -53,28 +60,37 @@ export default function EditProfileScreen({
   profile = INITIAL_PROFILE,
   onSaveProfile,
 }) {
-  const { firstName: initialFirstName, lastName: initialLastName } = splitName(profile.name);
+  const colors = useProfileColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { firstName: initialFirstName, lastName: initialLastName } = splitName(
+    profile.name,
+  );
   const [firstName, setFirstName] = useState(initialFirstName);
   const [lastName, setLastName] = useState(initialLastName);
   const [phone, setPhone] = useState(profile.phone || INITIAL_PROFILE.phone);
   const [email, setEmail] = useState(profile.email || INITIAL_PROFILE.email);
 
   useEffect(() => {
-    const { firstName: nextFirstName, lastName: nextLastName } = splitName(profile.name);
+    const { firstName: nextFirstName, lastName: nextLastName } = splitName(
+      profile.name,
+    );
     setFirstName(nextFirstName);
     setLastName(nextLastName);
     setPhone(profile.phone || INITIAL_PROFILE.phone);
     setEmail(profile.email || INITIAL_PROFILE.email);
   }, [profile.email, profile.name, profile.phone]);
 
-  const initials = [firstName, lastName]
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('') || 'RS';
+  const initials =
+    [firstName, lastName]
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(part => part.charAt(0).toUpperCase())
+      .join('') || 'RS';
 
   const handleSave = () => {
-    const nextName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
+    const nextName = [firstName.trim(), lastName.trim()]
+      .filter(Boolean)
+      .join(' ');
 
     onSaveProfile?.({
       name: nextName || profile.name || INITIAL_PROFILE.name,
@@ -87,8 +103,8 @@ export default function EditProfileScreen({
 
   return (
     <ScreenWrapper
-      topColor={PC.brand}
-      bottomColor={PC.bg}
+      topColor={colors.headerAccent}
+      bottomColor={colors.bg}
       statusBarStyle="light-content"
     >
       <SubScreenShell
@@ -119,6 +135,8 @@ export default function EditProfileScreen({
               <Text style={styles.formSectionLabel}>PERSONAL INFO</Text>
 
               <InputField
+                colors={colors}
+                styles={styles}
                 label="First Name"
                 value={firstName}
                 onChangeText={setFirstName}
@@ -128,6 +146,8 @@ export default function EditProfileScreen({
               <View style={styles.fieldDivider} />
 
               <InputField
+                colors={colors}
+                styles={styles}
                 label="Last Name"
                 value={lastName}
                 onChangeText={setLastName}
@@ -136,10 +156,12 @@ export default function EditProfileScreen({
               />
             </View>
 
-            <View style={[styles.formCard, { marginTop: 12 }]}>
+            <View style={[styles.formCard, styles.formCardSpaced]}>
               <Text style={styles.formSectionLabel}>CONTACT INFO</Text>
 
               <InputField
+                colors={colors}
+                styles={styles}
                 label="Phone Number"
                 value={phone}
                 onChangeText={setPhone}
@@ -149,6 +171,8 @@ export default function EditProfileScreen({
               />
 
               <InputField
+                colors={colors}
+                styles={styles}
                 label="Email Address"
                 value={email}
                 onChangeText={setEmail}
@@ -174,121 +198,114 @@ export default function EditProfileScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  avatarSection: {
-    alignItems: 'center',
-    paddingTop: 28,
-    paddingBottom: 24,
-  },
-  avatarOuter: {
-    position: 'relative',
-    marginBottom: 10,
-  },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 26,
-    backgroundColor: PC.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: PC.brand,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  avatarInitials: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: PC.white,
-    letterSpacing: -0.5,
-  },
-
-  formCard: {
-    marginHorizontal: 16,
-    backgroundColor: PC.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: PC.border,
-    overflow: 'hidden',
-    shadowColor: '#111318',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  formSectionLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: PC.muted,
-    letterSpacing: 1.4,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 4,
-  },
-
-  fieldWrap: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: PC.muted,
-    marginBottom: 6,
-    letterSpacing: 0.3,
-  },
-  fieldInput: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: PC.ink,
-    paddingVertical: 0,
-  },
-  fieldInputDisabled: {
-    color: PC.muted,
-  },
-  fieldDivider: {
-    height: 1,
-    backgroundColor: PC.divider,
-    marginLeft: 16,
-  },
-
-  verifiedNote: {
-    fontSize: 11,
-    color: PC.muted,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    fontStyle: 'italic',
-  },
-
-  mainSaveBtn: {
-    marginHorizontal: 16,
-    marginTop: 20,
-    backgroundColor: PC.brand,
-    borderRadius: 14,
-    paddingVertical: 17,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    shadowColor: PC.brand,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  mainSaveBtnText: {
-    color: PC.white,
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  mainSaveBtnArrow: {
-    width: 8,
-    height: 8,
-    borderTopWidth: 2,
-    borderRightWidth: 2,
-    borderColor: PC.white,
-    transform: [{ rotate: '45deg' }],
-  },
-});
+const createStyles = colors =>
+  StyleSheet.create({
+    avatarSection: {
+      alignItems: 'center',
+      paddingTop: 28,
+      paddingBottom: 24,
+    },
+    avatarOuter: {
+      position: 'relative',
+      marginBottom: 10,
+    },
+    avatar: {
+      width: 88,
+      height: 88,
+      borderRadius: 26,
+      backgroundColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: colors.brand,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: colors.isDark ? 0.36 : 0.28,
+      shadowRadius: 18,
+      elevation: 6,
+    },
+    avatarInitials: {
+      fontSize: 30,
+      fontWeight: '800',
+      color: colors.white,
+      letterSpacing: -0.5,
+    },
+    formCard: {
+      marginHorizontal: 16,
+      backgroundColor: colors.surface,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: colors.isDark ? 0.22 : 0.04,
+      shadowRadius: 10,
+      elevation: 2,
+    },
+    formCardSpaced: {
+      marginTop: 12,
+    },
+    formSectionLabel: {
+      fontSize: 9,
+      fontWeight: '800',
+      color: colors.muted,
+      letterSpacing: 1.4,
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 4,
+    },
+    fieldWrap: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    fieldLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.muted,
+      marginBottom: 6,
+      letterSpacing: 0.3,
+    },
+    fieldInput: {
+      fontSize: 15,
+      fontWeight: '500',
+      color: colors.ink,
+      paddingVertical: 0,
+    },
+    fieldInputDisabled: {
+      color: colors.muted,
+    },
+    fieldDivider: {
+      height: 1,
+      backgroundColor: colors.divider,
+      marginLeft: 16,
+    },
+    mainSaveBtn: {
+      marginHorizontal: 16,
+      marginTop: 20,
+      backgroundColor: colors.brand,
+      borderRadius: 14,
+      paddingVertical: 17,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      shadowColor: colors.brand,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: colors.isDark ? 0.34 : 0.3,
+      shadowRadius: 18,
+      elevation: 6,
+    },
+    mainSaveBtnText: {
+      color: colors.white,
+      fontSize: 16,
+      fontWeight: '700',
+      letterSpacing: 0.2,
+    },
+    mainSaveBtnArrow: {
+      width: 8,
+      height: 8,
+      borderTopWidth: 2,
+      borderRightWidth: 2,
+      borderColor: colors.white,
+      transform: [{ rotate: '45deg' }],
+    },
+  });

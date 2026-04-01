@@ -1,7 +1,4 @@
-// src/Screens/BookingFlow/SelectProblem.js
-// Step 2 - choose the problem or describe it manually
-
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +12,8 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { SERVICE_PROBLEMS } from '../../data/serviceProblems';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../../theme';
+import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
+import { useAppTheme } from '../../theme/ThemeProvider';
 
 const PROFILE_BRAND_ORANGE = '#FF6B2B';
 
@@ -81,23 +79,26 @@ const SEVERITY_META = {
 
 const getProblemIconName = (problemId) => PROBLEM_ICON_MAP[problemId] || 'tools';
 
-const getSeverityMeta = (severity) => (
+const getSeverityMeta = (severity, colors) => (
   SEVERITY_META[severity] || {
     label: 'Moderate',
     chip: 'Standard service',
-    tone: COLORS.inkSecondary,
-    bg: '#EEF2F7',
+    tone: colors.inkSecondary,
+    bg: colors.surfaceMuted,
   }
 );
 
 export default function SelectProblem({ service, onNext }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [selectedProblem, setSelectedProblem] = useState(null);
   const [customText, setCustomText] = useState('');
   const [isInputFocused, setIsInputFocused] = useState(false);
 
   const problems = SERVICE_PROBLEMS[service?.id] || [];
-  const serviceAccent = service?.accentColor || COLORS.primary;
-  const serviceSoft = service?.lightColor || COLORS.primaryLight;
+  const serviceAccent = service?.accentColor || colors.primary;
+  const serviceSoft = service?.lightColor || colors.primaryLight;
   const serviceLabel = service?.label || 'Home Service';
   const finalProblem = selectedProblem;
   const finalCustom = customText.trim();
@@ -183,7 +184,7 @@ export default function SelectProblem({ service, onNext }) {
           {problems.length > 0 ? (
             problems.map((item) => {
               const isSelected = selectedProblem?.id === item.id;
-              const severityMeta = getSeverityMeta(item.defaultSeverity);
+              const severityMeta = getSeverityMeta(item.defaultSeverity, colors);
 
               return (
                 <TouchableOpacity
@@ -210,7 +211,7 @@ export default function SelectProblem({ service, onNext }) {
                     <View
                       style={[
                         styles.problemIconWrap,
-                        { backgroundColor: isSelected ? serviceSoft : '#F4F6F8' },
+                        { backgroundColor: isSelected ? serviceSoft : colors.surfaceMuted },
                       ]}
                     >
                       <Icon
@@ -236,13 +237,13 @@ export default function SelectProblem({ service, onNext }) {
                           <View
                             style={[
                               styles.problemTag,
-                              { backgroundColor: isSelected ? serviceSoft : '#F3F4F6' },
+                              { backgroundColor: isSelected ? serviceSoft : colors.backgroundAlt },
                             ]}
                           >
                             <Text
                               style={[
                                 styles.problemTagText,
-                                { color: isSelected ? serviceAccent : COLORS.inkSecondary },
+                                { color: isSelected ? serviceAccent : colors.inkSecondary },
                               ]}
                             >
                               {severityMeta.label}
@@ -328,7 +329,7 @@ export default function SelectProblem({ service, onNext }) {
             <TextInput
               style={styles.input}
               placeholder={`Tell us more about the ${serviceLabel.toLowerCase()} issue...`}
-              placeholderTextColor={COLORS.inkMuted}
+              placeholderTextColor={colors.inkMuted}
               value={customText}
               onChangeText={handleCustomChange}
               onFocus={() => setIsInputFocused(true)}
@@ -346,10 +347,10 @@ export default function SelectProblem({ service, onNext }) {
           </View>
         </View>
 
-        {customText.length > 10 && (
+        {customText.length > 10 ? (
           <View style={styles.aiCard}>
             <View style={styles.aiIconWrap}>
-              <Icon name="robot-outline" size={16} color={COLORS.success} />
+              <Icon name="robot-outline" size={16} color={colors.success} />
             </View>
             <View style={styles.aiCopy}>
               <Text style={styles.aiTitle}>AI assist is ready</Text>
@@ -358,7 +359,7 @@ export default function SelectProblem({ service, onNext }) {
               </Text>
             </View>
           </View>
-        )}
+        ) : null}
 
         <TouchableOpacity
           style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
@@ -366,9 +367,7 @@ export default function SelectProblem({ service, onNext }) {
           activeOpacity={0.9}
           disabled={!canProceed}
         >
-          <Text style={styles.nextBtnText}>
-            Continue to urgency
-          </Text>
+          <Text style={styles.nextBtnText}>Continue to urgency</Text>
           <Icon
             name="arrow-right"
             size={18}
@@ -383,28 +382,27 @@ export default function SelectProblem({ service, onNext }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) => StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingHorizontal: SPACING.md,
     paddingTop: 14,
     paddingBottom: 28,
   },
-
   heroWrap: {
     marginBottom: 18,
     borderRadius: 26,
     ...SHADOW.elevated,
   },
   heroCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 26,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#EEF0F4',
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   heroOrbPrimary: {
@@ -428,13 +426,13 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: 28,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.7,
   },
   heroSubtitle: {
     fontSize: 14,
     lineHeight: 22,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     marginTop: 10,
     marginBottom: 18,
     maxWidth: '90%',
@@ -442,12 +440,12 @@ const styles = StyleSheet.create({
   heroStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F8FB',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 18,
     paddingVertical: 14,
     paddingHorizontal: 10,
     borderWidth: 1,
-    borderColor: '#ECEEF3',
+    borderColor: colors.border,
   },
   heroStatItem: {
     flex: 1,
@@ -456,20 +454,19 @@ const styles = StyleSheet.create({
   heroStatValue: {
     fontSize: 16,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 3,
   },
   heroStatLabel: {
     fontSize: 10,
     fontWeight: FONT.medium,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
   },
   heroStatDivider: {
     width: 1,
     height: 28,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: colors.border,
   },
-
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -483,14 +480,14 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: FONT.bold,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     letterSpacing: 1.2,
     marginBottom: 5,
   },
   sectionTitle: {
     fontSize: 22,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.5,
   },
   sectionCount: {
@@ -504,15 +501,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: FONT.black,
   },
-
   problemList: {
     marginBottom: 22,
   },
   problemCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E9EDF2',
+    borderColor: colors.border,
     paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 12,
@@ -551,7 +547,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
     marginRight: 8,
   },
   problemTag: {
@@ -568,7 +564,7 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#D3D9E2',
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
@@ -592,50 +588,48 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   problemFooterTextMuted: {
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     fontWeight: FONT.medium,
   },
-
   emptyCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#E9EDF2',
+    borderColor: colors.border,
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 6,
   },
   emptyText: {
     fontSize: 13,
     lineHeight: 20,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
   },
-
   customSection: {
     marginBottom: 14,
   },
   customTitle: {
     fontSize: 22,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.5,
   },
   customSubtitle: {
     fontSize: 13,
     lineHeight: 18,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     marginTop: 6,
     marginBottom: 12,
   },
   inputCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 22,
     borderWidth: 1.5,
-    borderColor: '#E9EDF2',
+    borderColor: colors.border,
     padding: 16,
     minHeight: 154,
     ...SHADOW.card,
@@ -644,7 +638,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     lineHeight: 23,
-    color: COLORS.ink,
+    color: colors.ink,
     minHeight: 92,
   },
   inputFooter: {
@@ -657,30 +651,29 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     paddingRight: 10,
   },
   charCount: {
     fontSize: 11,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     fontWeight: FONT.medium,
   },
-
   aiCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.successLight,
+    backgroundColor: colors.successLight,
     borderRadius: 18,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#D7EEE1',
+    borderColor: colors.isDark ? colors.success : '#D7EEE1',
     marginBottom: 16,
   },
   aiIconWrap: {
     width: 34,
     height: 34,
     borderRadius: 12,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -691,15 +684,14 @@ const styles = StyleSheet.create({
   aiTitle: {
     fontSize: 13,
     fontWeight: FONT.bold,
-    color: COLORS.success,
+    color: colors.success,
     marginBottom: 2,
   },
   aiText: {
     fontSize: 12,
     lineHeight: 18,
-    color: COLORS.success,
+    color: colors.success,
   },
-
   nextBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -712,7 +704,7 @@ const styles = StyleSheet.create({
     shadowColor: PROFILE_BRAND_ORANGE,
   },
   nextBtnDisabled: {
-    backgroundColor: '#BFC6D1',
+    backgroundColor: colors.inkMuted,
     shadowOpacity: 0,
     elevation: 0,
   },

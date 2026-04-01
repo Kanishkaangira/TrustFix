@@ -1,6 +1,3 @@
-// src/Screens/BookingFlow/SelectSlot.js
-// Step 4 - schedule date and time for minor bookings
-
 import React, { useMemo, useState } from 'react';
 import {
   View,
@@ -11,7 +8,8 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../../theme';
+import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
+import { useAppTheme } from '../../theme/ThemeProvider';
 
 const generateDates = () => {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -19,17 +17,17 @@ const generateDates = () => {
   const result = [];
   const today = new Date();
 
-  for (let i = 0; i < 7; i += 1) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
+  for (let index = 0; index < 7; index += 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + index);
 
     result.push({
-      id: i,
-      dayName: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : days[d.getDay()],
-      date: d.getDate(),
-      month: months[d.getMonth()],
-      fullDate: d.toDateString(),
-      isBusy: d.getDay() === 0,
+      id: index,
+      dayName: index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : days[date.getDay()],
+      date: date.getDate(),
+      month: months[date.getMonth()],
+      fullDate: date.toDateString(),
+      isBusy: date.getDay() === 0,
     });
   }
 
@@ -75,8 +73,10 @@ const TIME_SLOTS = [
 ];
 
 export default function SelectSlot({ onNext, navigation, selectedAddress }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dates = useMemo(() => generateDates(), []);
-
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
 
@@ -109,7 +109,7 @@ export default function SelectSlot({ onNext, navigation, selectedAddress }) {
           <View style={styles.heroGlowSmall} />
 
           <View style={styles.heroChip}>
-            <Icon name="calendar-clock-outline" size={16} color={COLORS.primary} />
+            <Icon name="calendar-clock-outline" size={16} color={colors.primary} />
             <Text style={styles.heroChipText}>SCHEDULE VISIT</Text>
           </View>
 
@@ -261,17 +261,13 @@ export default function SelectSlot({ onNext, navigation, selectedAddress }) {
                       !isAvailable
                         ? '#A1A1AA'
                         : isSelected
-                        ? COLORS.primary
-                        : COLORS.inkSecondary
+                        ? colors.primary
+                        : colors.inkSecondary
                     }
                   />
                 </View>
 
-                <View
-                  style={[
-                    styles.slotCopy,
-                  ]}
-                >
+                <View style={styles.slotCopy}>
                   <Text
                     style={[
                       styles.slotPeriod,
@@ -293,31 +289,31 @@ export default function SelectSlot({ onNext, navigation, selectedAddress }) {
                   </Text>
                 </View>
 
-              <View
-                style={[
-                  styles.slotStatus,
-                  isSelected && styles.slotStatusSelected,
-                  !isAvailable && styles.slotStatusDisabled,
-                ]}
-              >
-                {isSelected ? (
-                  <Icon name="check" size={12} color="#FFFFFF" />
-                ) : !isAvailable ? (
-                  <Icon name="close" size={12} color="#A1A1AA" />
-                ) : (
-                  <View style={styles.slotStatusDot} />
-                )}
-              </View>
+                <View
+                  style={[
+                    styles.slotStatus,
+                    isSelected && styles.slotStatusSelected,
+                    !isAvailable && styles.slotStatusDisabled,
+                  ]}
+                >
+                  {isSelected ? (
+                    <Icon name="check" size={12} color="#FFFFFF" />
+                  ) : !isAvailable ? (
+                    <Icon name="close" size={12} color="#A1A1AA" />
+                  ) : (
+                    <View style={styles.slotStatusDot} />
+                  )}
+                </View>
               </View>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {canProceed && (
+      {canProceed ? (
         <View style={styles.selectionCard}>
           <View style={styles.selectionIconWrap}>
-            <Icon name="calendar-check-outline" size={20} color={COLORS.primary} />
+            <Icon name="calendar-check-outline" size={20} color={colors.primary} />
           </View>
           <View style={styles.selectionCopy}>
             <Text style={styles.selectionLabel}>Selected visit slot</Text>
@@ -326,14 +322,14 @@ export default function SelectSlot({ onNext, navigation, selectedAddress }) {
             </Text>
           </View>
         </View>
-      )}
+      ) : null}
 
       <View style={styles.addressSection}>
         <Text style={styles.sectionLabel}>SERVICE ADDRESS</Text>
         <View style={styles.addressCard}>
           <View style={styles.addressInfo}>
             <View style={styles.addressIconWrap}>
-              <Icon name="map-marker-outline" size={20} color={COLORS.primary} />
+              <Icon name="map-marker-outline" size={20} color={colors.primary} />
             </View>
 
             <View style={styles.addressCopy}>
@@ -350,7 +346,7 @@ export default function SelectSlot({ onNext, navigation, selectedAddress }) {
             activeOpacity={0.85}
           >
             <Text style={styles.changeAddressText}>Change</Text>
-            <Icon name="chevron-right" size={16} color={COLORS.primary} />
+            <Icon name="chevron-right" size={16} color={colors.primary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -370,28 +366,27 @@ export default function SelectSlot({ onNext, navigation, selectedAddress }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingHorizontal: SPACING.md,
     paddingTop: 14,
     paddingBottom: 28,
   },
-
   heroWrap: {
     borderRadius: 28,
     marginBottom: 20,
     ...SHADOW.elevated,
   },
   heroCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 28,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#ECEFF3',
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   heroGlowLarge: {
@@ -401,7 +396,7 @@ const styles = StyleSheet.create({
     borderRadius: 80,
     top: -58,
     right: -48,
-    backgroundColor: 'rgba(217,79,43,0.10)',
+    backgroundColor: colors.primaryLight,
   },
   heroGlowSmall: {
     position: 'absolute',
@@ -410,7 +405,7 @@ const styles = StyleSheet.create({
     borderRadius: 46,
     bottom: -26,
     right: 42,
-    backgroundColor: 'rgba(217,79,43,0.07)',
+    backgroundColor: colors.primaryMid,
   },
   heroChip: {
     flexDirection: 'row',
@@ -419,7 +414,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.primaryLight,
     marginBottom: 14,
   },
   heroChipText: {
@@ -427,12 +422,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: FONT.bold,
     letterSpacing: 0.8,
-    color: COLORS.primary,
+    color: colors.primary,
   },
   heroTitle: {
     fontSize: 28,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.7,
   },
   heroSubtitle: {
@@ -440,16 +435,16 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     fontSize: 14,
     lineHeight: 22,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     maxWidth: '92%',
   },
   heroStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#EDF0F4',
+    borderColor: colors.border,
     paddingVertical: 14,
     paddingHorizontal: 10,
   },
@@ -460,20 +455,19 @@ const styles = StyleSheet.create({
   heroStatValue: {
     fontSize: 16,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 3,
   },
   heroStatLabel: {
     fontSize: 10,
     fontWeight: FONT.medium,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
   },
   heroStatDivider: {
     width: 1,
     height: 28,
-    backgroundColor: '#E3E7ED',
+    backgroundColor: colors.border,
   },
-
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -490,22 +484,21 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: FONT.bold,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     letterSpacing: 1.2,
     marginBottom: 5,
   },
   sectionTitle: {
     fontSize: 22,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.5,
   },
   sectionMeta: {
     fontSize: 12,
     fontWeight: FONT.semibold,
-    color: COLORS.primary,
+    color: colors.primary,
   },
-
   dateRow: {
     paddingRight: 6,
     paddingBottom: 4,
@@ -514,9 +507,9 @@ const styles = StyleSheet.create({
     width: 82,
     minHeight: 112,
     borderRadius: 20,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E8ECF1',
+    borderColor: colors.border,
     paddingVertical: 12,
     paddingHorizontal: 8,
     marginRight: 10,
@@ -525,21 +518,21 @@ const styles = StyleSheet.create({
     ...SHADOW.card,
   },
   dateCardSelected: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-    shadowColor: COLORS.primary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
     shadowOpacity: 0.24,
     elevation: 5,
   },
   dateCardDisabled: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     opacity: 0.72,
   },
   dateDayText: {
     fontSize: 10,
     fontWeight: FONT.bold,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     textAlign: 'center',
     includeFontPadding: false,
     lineHeight: 12,
@@ -554,7 +547,7 @@ const styles = StyleSheet.create({
   dateNumber: {
     fontSize: 28,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.6,
     lineHeight: 32,
     includeFontPadding: false,
@@ -573,7 +566,7 @@ const styles = StyleSheet.create({
   dateMonth: {
     fontSize: 11,
     fontWeight: FONT.medium,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     lineHeight: 13,
     includeFontPadding: false,
   },
@@ -587,7 +580,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontSize: 9,
     fontWeight: FONT.bold,
-    color: COLORS.success,
+    color: colors.success,
     letterSpacing: 0.3,
     lineHeight: 11,
     includeFontPadding: false,
@@ -598,31 +591,30 @@ const styles = StyleSheet.create({
   dateStatusTextDisabled: {
     color: '#A1A1AA',
   },
-
   slotList: {
     marginBottom: 2,
   },
   slotCard: {
     width: '100%',
     minHeight: 82,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E8ECF1',
+    borderColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 13,
     marginBottom: 12,
     ...SHADOW.card,
   },
   slotCardSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primaryLight,
-    shadowColor: COLORS.primary,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+    shadowColor: colors.primary,
     shadowOpacity: 0.12,
   },
   slotCardDisabled: {
-    backgroundColor: '#F4F5F7',
-    borderColor: '#E4E7EC',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
   },
   slotCardInner: {
     flexDirection: 'row',
@@ -633,16 +625,16 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 15,
-    backgroundColor: '#F4F6F9',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   slotIconWrapSelected: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   slotIconWrapDisabled: {
-    backgroundColor: '#E8EAEE',
+    backgroundColor: colors.borderLight,
   },
   slotCopy: {
     flex: 1,
@@ -652,13 +644,13 @@ const styles = StyleSheet.create({
   slotPeriod: {
     fontSize: 10,
     fontWeight: FONT.bold,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginBottom: 4,
   },
   slotPeriodSelected: {
-    color: COLORS.primary,
+    color: colors.primary,
   },
   slotPeriodDisabled: {
     color: '#A1A1AA',
@@ -668,45 +660,44 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: '#D4D9E1',
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   slotStatusSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary,
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
   },
   slotStatusDisabled: {
     borderColor: '#D4D4D8',
-    backgroundColor: '#EFEFF1',
+    backgroundColor: colors.surfaceMuted,
   },
   slotStatusDot: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
   },
   slotLabel: {
     fontSize: 14,
     lineHeight: 19,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   slotLabelSelected: {
-    color: COLORS.primary,
+    color: colors.primary,
   },
   slotLabelDisabled: {
     color: '#A1A1AA',
   },
-
   selectionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.primaryLight,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#F2D4CB',
+    borderColor: colors.primaryMid,
     padding: 14,
     marginTop: 4,
     marginBottom: 18,
@@ -715,7 +706,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -726,24 +717,23 @@ const styles = StyleSheet.create({
   selectionLabel: {
     fontSize: 12,
     fontWeight: FONT.bold,
-    color: COLORS.primary,
+    color: colors.primary,
     marginBottom: 3,
   },
   selectionValue: {
     fontSize: 14,
     lineHeight: 20,
     fontWeight: FONT.semibold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
-
   addressSection: {
     marginBottom: 20,
   },
   addressCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E8ECF1',
+    borderColor: colors.border,
     padding: 14,
     ...SHADOW.card,
   },
@@ -755,7 +745,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -767,13 +757,13 @@ const styles = StyleSheet.create({
   addressName: {
     fontSize: 15,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 3,
   },
   addressText: {
     fontSize: 13,
     lineHeight: 19,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
   },
   changeAddressBtn: {
     marginTop: 14,
@@ -783,26 +773,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.primaryLight,
   },
   changeAddressText: {
     fontSize: 13,
     fontWeight: FONT.bold,
-    color: COLORS.primary,
+    color: colors.primary,
     marginRight: 4,
   },
-
   nextBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     borderRadius: 18,
     paddingVertical: 17,
     ...SHADOW.cta,
   },
   nextBtnDisabled: {
-    backgroundColor: '#BFC6D1',
+    backgroundColor: colors.inkMuted,
     shadowOpacity: 0,
     elevation: 0,
   },

@@ -16,7 +16,8 @@ import Voice from '@react-native-voice/voice';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../Components/ScreenWrapper';
-import { COLORS, FONT, SHADOW, SPACING } from '../theme';
+import { FONT, SHADOW, SPACING, getThemeColors } from '../theme';
+import { useAppTheme } from '../theme/ThemeProvider';
 
 const SERVICES = [
   {
@@ -121,6 +122,9 @@ const POPULAR_SEARCHES = ['Electrician', 'Gas refill', 'Water leakage', 'Carpent
 const HAS_VOICE_NATIVE_MODULE = !!NativeModules.Voice;
 
 export default function SearchScreen({ navigation, route }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const autoListenTrigger = route?.params?.autoListenTrigger ?? null;
   const [query, setQuery] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -326,7 +330,7 @@ export default function SearchScreen({ navigation, route }) {
       await Voice.start('en-IN', {
         REQUEST_PERMISSIONS_AUTO: true,
       });
-    } catch (error) {
+    } catch (_) {
       setIsListening(false);
       setShowListeningFocus(false);
       showVoiceToast('Unable to start voice search right now.');
@@ -335,31 +339,31 @@ export default function SearchScreen({ navigation, route }) {
 
   return (
     <ScreenWrapper
-      topColor={COLORS.surface}
-      bottomColor={COLORS.background}
-      statusBarStyle="dark-content"
+      topColor={colors.surface}
+      bottomColor={colors.background}
+      statusBarStyle={isDark ? 'light-content' : 'dark-content'}
     >
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
-            <Icon name="chevron-left" size={26} color={COLORS.ink} />
+            <Icon name="chevron-left" size={26} color={colors.ink} />
           </TouchableOpacity>
 
           <View style={styles.searchBar}>
-            <Icon name="magnify" size={20} color={COLORS.inkMuted} />
+            <Icon name="magnify" size={20} color={colors.inkMuted} />
             <TextInput
               autoFocus={!autoListenTrigger}
               value={query}
               onChangeText={setQuery}
               onFocus={handleSearchFieldFocus}
               placeholder="Search service type..."
-              placeholderTextColor={COLORS.inkMuted}
+              placeholderTextColor={colors.inkMuted}
               style={styles.searchInput}
               returnKeyType="search"
             />
             {query ? (
               <TouchableOpacity onPress={() => setQuery('')} activeOpacity={0.7}>
-                <Icon name="close-circle" size={18} color={COLORS.inkMuted} />
+                <Icon name="close-circle" size={18} color={colors.inkMuted} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -372,7 +376,7 @@ export default function SearchScreen({ navigation, route }) {
             <Icon
               name={showListeningFocus ? 'microphone' : 'microphone-outline'}
               size={18}
-              color={showListeningFocus ? COLORS.surface : COLORS.primary}
+              color={showListeningFocus ? colors.surface : colors.primary}
             />
           </TouchableOpacity>
         </View>
@@ -395,7 +399,7 @@ export default function SearchScreen({ navigation, route }) {
                       onPress={() => applySearchChip(item)}
                       activeOpacity={0.8}
                     >
-                      <Icon name="history" size={14} color={COLORS.primary} />
+                      <Icon name="history" size={14} color={colors.primary} />
                       <Text style={styles.chipText}>{item}</Text>
                     </TouchableOpacity>
                   ))}
@@ -440,13 +444,13 @@ export default function SearchScreen({ navigation, route }) {
                   </View>
 
                   <View style={styles.resultArrow}>
-                    <Icon name="chevron-right" size={22} color={COLORS.inkMuted} />
+                    <Icon name="chevron-right" size={22} color={colors.inkMuted} />
                   </View>
                 </TouchableOpacity>
               ))
             ) : (
               <View style={styles.emptyCard}>
-                <Icon name="magnify-close" size={34} color={COLORS.inkMuted} />
+                <Icon name="magnify-close" size={34} color={colors.inkMuted} />
                 <Text style={styles.emptyTitle}>No services found</Text>
                 <Text style={styles.emptyText}>Try AC Repair, Plumbing, Cleaning or Electrical.</Text>
               </View>
@@ -475,7 +479,7 @@ export default function SearchScreen({ navigation, route }) {
             ]}
           >
             <View style={styles.voiceToastIconWrap}>
-              <Icon name="microphone-off" size={18} color={COLORS.primary} />
+              <Icon name="microphone-off" size={18} color={colors.primary} />
             </View>
             <View style={styles.voiceToastTextWrap}>
               <Text style={styles.voiceToastTitle}>Voice search</Text>
@@ -488,10 +492,10 @@ export default function SearchScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -499,9 +503,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingTop: 12,
     paddingBottom: 12,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: colors.border,
     zIndex: 2,
   },
   backBtn: {
@@ -511,15 +515,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   searchBar: {
     flex: 1,
     minHeight: 48,
     borderRadius: 16,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     paddingHorizontal: 14,
     marginRight: 10,
     flexDirection: 'row',
@@ -529,22 +533,22 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: COLORS.ink,
+    color: colors.ink,
     paddingVertical: 0,
   },
   micBtn: {
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   micBtnActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     borderWidth: 3,
-    borderColor: '#FFE4DA',
-    shadowColor: COLORS.primary,
+    borderColor: colors.primaryMid,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.34,
     shadowRadius: 16,
@@ -561,7 +565,7 @@ const styles = StyleSheet.create({
   },
   listeningOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.38)',
+    backgroundColor: colors.isDark ? 'rgba(8,10,14,0.45)' : 'rgba(255,255,255,0.38)',
   },
   voiceToast: {
     position: 'absolute',
@@ -573,9 +577,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 18,
-    backgroundColor: 'rgba(24, 26, 32, 0.96)',
+    backgroundColor: colors.isDark ? 'rgba(20,26,34,0.98)' : 'rgba(24,26,32,0.96)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.isDark ? colors.border : 'rgba(255,255,255,0.08)',
     ...SHADOW.card,
   },
   voiceToastIconWrap: {
@@ -584,7 +588,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.isDark ? colors.surfaceMuted : 'rgba(255,255,255,0.08)',
     marginRight: 12,
   },
   voiceToastTextWrap: {
@@ -608,7 +612,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 17,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 12,
   },
   sectionGap: {
@@ -623,31 +627,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   popularChip: {
-    backgroundColor: COLORS.primaryLight,
-    borderColor: COLORS.primaryMid,
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primaryMid,
   },
   chipText: {
     fontSize: 13,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     fontWeight: FONT.semibold,
   },
   resultCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 18,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
     ...SHADOW.card,
   },
   resultIconWrap: {
@@ -664,16 +668,16 @@ const styles = StyleSheet.create({
   resultTitle: {
     fontSize: 16,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   resultSubtitle: {
     fontSize: 12,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     marginTop: 3,
   },
   resultPrice: {
     fontSize: 12,
-    color: COLORS.primary,
+    color: colors.primary,
     fontWeight: FONT.semibold,
     marginTop: 7,
   },
@@ -685,21 +689,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 48,
     paddingHorizontal: 20,
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.border,
   },
   emptyTitle: {
     marginTop: 14,
     fontSize: 18,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   emptyText: {
     marginTop: 6,
     fontSize: 13,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     textAlign: 'center',
   },
 });

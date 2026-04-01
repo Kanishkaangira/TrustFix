@@ -5,23 +5,30 @@
 import React, { useCallback, useEffect } from 'react';
 import { View, StatusBar, StyleSheet } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useAppTheme } from '../theme/ThemeProvider';
+import { getThemeColors } from '../theme';
 
 const ScreenWrapper = ({
   children,
-  topColor       = '#FFFFFF',
-  bottomColor    = '#FAF9F6',
-  statusBarStyle = 'dark-content',
+  topColor,
+  bottomColor,
+  statusBarStyle,
 }) => {
   const isFocused = useIsFocused();
+  const { isDark } = useAppTheme();
+  const themeColors = getThemeColors(isDark);
+  const resolvedTopColor = topColor ?? themeColors.surface;
+  const resolvedBottomColor = bottomColor ?? themeColors.background;
+  const resolvedStatusBarStyle = statusBarStyle ?? (isDark ? 'light-content' : 'dark-content');
 
   // useFocusEffect fires when THIS screen gains/loses focus.
   // So Home sets coral when focused, AiChat sets white when focused —
   // they never overwrite each other at wrong times.
   useFocusEffect(
     useCallback(() => {
-      StatusBar.setBackgroundColor(topColor, false);
-      StatusBar.setBarStyle(statusBarStyle, false);
-    }, [topColor, statusBarStyle])
+      StatusBar.setBackgroundColor(resolvedTopColor, false);
+      StatusBar.setBarStyle(resolvedStatusBarStyle, false);
+    }, [resolvedTopColor, resolvedStatusBarStyle])
   );
 
   // Re-apply the active screen colors after nested stack/tab transitions.
@@ -30,18 +37,18 @@ const ScreenWrapper = ({
   useEffect(() => {
     if (!isFocused) return;
 
-    StatusBar.setBackgroundColor(topColor, false);
-    StatusBar.setBarStyle(statusBarStyle, false);
-  }, [isFocused, topColor, statusBarStyle]);
+    StatusBar.setBackgroundColor(resolvedTopColor, false);
+    StatusBar.setBarStyle(resolvedStatusBarStyle, false);
+  }, [isFocused, resolvedTopColor, resolvedStatusBarStyle]);
 
   return (
-    <View style={[styles.root, { backgroundColor: topColor }]}>
+    <View style={[styles.root, { backgroundColor: resolvedTopColor }]}>
       <StatusBar
-        backgroundColor={topColor}
-        barStyle={statusBarStyle}
+        backgroundColor={resolvedTopColor}
+        barStyle={resolvedStatusBarStyle}
         translucent={false}
       />
-      <View style={[styles.content, { backgroundColor: bottomColor }]}>
+      <View style={[styles.content, { backgroundColor: resolvedBottomColor }]}>
         {children}
       </View>
     </View>

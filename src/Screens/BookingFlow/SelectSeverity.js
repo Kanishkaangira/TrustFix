@@ -1,7 +1,7 @@
 // src/Screens/BookingFlow/SelectSeverity.js
 // Step 3 - urgency selection
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../../theme';
+import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
+import { useAppTheme } from '../../theme/ThemeProvider';
 
 const PROFILE_BRAND_ORANGE = '#FF6B2B';
 
@@ -21,12 +22,12 @@ const SEVERITY_OPTIONS = [
     label: 'Minor',
     sublabel: 'Visit in 2-3 days',
     description: 'Best for non-critical issues.',
-    dotColor: COLORS.success,
-    bgColor: COLORS.successLight,
+    dotColor: '#1A7A4A',
+    bgColor: '#EBF7F1',
     borderColor: '#C5E1A5',
     accentColor: '#2E7D32',
     badge: 'Value',
-    badgeColor: COLORS.success,
+    badgeColor: '#1A7A4A',
     helper: 'Choose slot next',
   },
   {
@@ -47,12 +48,12 @@ const SEVERITY_OPTIONS = [
     label: 'Urgent',
     sublabel: '15-20 min dispatch',
     description: 'Emergency help for risky issues.',
-    dotColor: COLORS.danger,
-    bgColor: COLORS.dangerLight,
+    dotColor: '#C0392B',
+    bgColor: '#FDECEA',
     borderColor: '#EF9A9A',
     accentColor: '#C62828',
     badge: 'Emergency',
-    badgeColor: COLORS.danger,
+    badgeColor: '#C0392B',
     helper: 'Emergency dispatch starts now',
   },
 ];
@@ -74,10 +75,13 @@ const getButtonLabel = (selected) => {
 };
 
 export default function SelectSeverity({ service, problem, onNext }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [selected, setSelected] = useState(null);
 
   const canProceed = selected !== null;
-  const serviceSoft = service?.lightColor || COLORS.primaryLight;
+  const serviceSoft = service?.lightColor || colors.primaryLight;
   const serviceLabel = service?.shortLabel || service?.label || '';
   const problemLabel = typeof problem === 'string' ? problem.trim() : '';
 
@@ -112,7 +116,7 @@ export default function SelectSeverity({ service, problem, onNext }) {
                 <Icon
                   name={service?.icon || 'tools'}
                   size={14}
-                  color={COLORS.primary}
+                  color={colors.primary}
                 />
                 <Text
                   style={styles.servicePillText}
@@ -142,7 +146,7 @@ export default function SelectSeverity({ service, problem, onNext }) {
             key={option.id}
             style={[
               styles.card,
-              { borderColor: isSelected ? option.dotColor : COLORS.border },
+              { borderColor: isSelected ? option.dotColor : colors.border },
               isSelected && { backgroundColor: option.bgColor },
             ]}
             onPress={() => handleSelect(option)}
@@ -170,7 +174,7 @@ export default function SelectSeverity({ service, problem, onNext }) {
               <View
                 style={[
                   styles.radio,
-                  { borderColor: isSelected ? option.dotColor : COLORS.inkMuted },
+                  { borderColor: isSelected ? option.dotColor : colors.inkMuted },
                 ]}
               >
                 {isSelected ? (
@@ -216,10 +220,10 @@ export default function SelectSeverity({ service, problem, onNext }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingHorizontal: SPACING.md,
@@ -233,12 +237,12 @@ const styles = StyleSheet.create({
   headingTitle: {
     fontSize: 22,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.5,
   },
   headingSubtitle: {
     fontSize: 14,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     marginTop: 4,
   },
 
@@ -262,13 +266,13 @@ const styles = StyleSheet.create({
     fontWeight: FONT.bold,
     marginLeft: 6,
     maxWidth: 150,
-    color: COLORS.primary,
+    color: colors.primary,
   },
   problemPill: {
     alignSelf: 'flex-start',
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.primaryMid,
+    borderColor: colors.primaryMid,
     borderRadius: RADIUS.full,
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -277,12 +281,12 @@ const styles = StyleSheet.create({
   },
   problemPillText: {
     fontSize: 12,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     fontWeight: FONT.medium,
   },
 
   card: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: RADIUS.lg,
     borderWidth: 2,
     padding: SPACING.md,
@@ -300,7 +304,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 8,
   },
   badgeText: {
-    color: COLORS.surface,
+    color: colors.surface,
     fontSize: 10,
     fontWeight: FONT.bold,
     letterSpacing: 0.5,
@@ -322,11 +326,11 @@ const styles = StyleSheet.create({
   cardLabel: {
     fontSize: 16,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   cardSublabel: {
     fontSize: 13,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     marginTop: 2,
     fontWeight: FONT.medium,
   },
@@ -345,7 +349,7 @@ const styles = StyleSheet.create({
   },
   cardDescription: {
     fontSize: 13,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     lineHeight: 19,
   },
   slaStrip: {
@@ -359,8 +363,8 @@ const styles = StyleSheet.create({
   },
 
   infoBox: {
-    backgroundColor: COLORS.primaryLight,
-    borderColor: COLORS.primaryMid,
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primaryMid,
     borderWidth: 1,
     borderRadius: RADIUS.md,
     padding: 12,
@@ -368,7 +372,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 12,
-    color: COLORS.primary,
+    color: colors.primary,
     fontWeight: FONT.medium,
     lineHeight: 17,
   },
@@ -387,12 +391,12 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   nextBtnDisabled: {
-    backgroundColor: COLORS.inkMuted,
+    backgroundColor: colors.inkMuted,
     shadowOpacity: 0,
     elevation: 0,
   },
   nextBtnText: {
-    color: COLORS.surface,
+    color: colors.surface,
     fontSize: 16,
     fontWeight: FONT.bold,
     letterSpacing: 0.3,

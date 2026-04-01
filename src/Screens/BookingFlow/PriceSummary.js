@@ -1,7 +1,4 @@
-// src/Screens/BookingFlow/PriceSummary.js
-// Step 5 - review booking, estimate, and continue to payment
-
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -18,37 +15,11 @@ import {
   PARTS_CATALOG,
   REPAIR_PROTECTION_PRICE,
 } from '../../data/serviceProblems';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../../theme';
+import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
+import { useAppTheme } from '../../theme/ThemeProvider';
 
 const BRAND_ORANGE = '#FF6B2B';
 const BRAND_SOFT = '#FFF0E8';
-
-const SEVERITY_META = {
-  minor: {
-    label: 'Minor',
-    tone: COLORS.success,
-    bg: COLORS.successLight,
-    border: '#CFE8DA',
-    icon: 'calendar-clock-outline',
-    scheduleLabel: 'Scheduled visit',
-  },
-  moderate: {
-    label: 'Moderate',
-    tone: '#2563EB',
-    bg: '#DBEAFE',
-    border: '#BFDBFE',
-    icon: 'account-clock-outline',
-    scheduleLabel: 'Dispatch window',
-  },
-  urgent: {
-    label: 'Urgent',
-    tone: COLORS.danger,
-    bg: COLORS.dangerLight,
-    border: '#F2CBC5',
-    icon: 'flash-alert-outline',
-    scheduleLabel: 'Dispatch window',
-  },
-};
 
 const formatCurrency = (value) => `\u20B9${value}`;
 
@@ -68,7 +39,34 @@ const getScheduleValue = ({ severity, date, slot }) => {
   return 'Will be confirmed';
 };
 
-const buildPriceRows = ({ pricing, part, urgencySurcharge, severity }) => {
+const createSeverityMeta = (colors) => ({
+  minor: {
+    label: 'Minor',
+    tone: colors.success,
+    bg: colors.successLight,
+    border: colors.isDark ? '#2C5A3D' : '#CFE8DA',
+    icon: 'calendar-clock-outline',
+    scheduleLabel: 'Scheduled visit',
+  },
+  moderate: {
+    label: 'Moderate',
+    tone: '#2563EB',
+    bg: '#DBEAFE',
+    border: '#BFDBFE',
+    icon: 'account-clock-outline',
+    scheduleLabel: 'Dispatch window',
+  },
+  urgent: {
+    label: 'Urgent',
+    tone: colors.danger,
+    bg: colors.dangerLight,
+    border: colors.isDark ? '#6F383E' : '#F2CBC5',
+    icon: 'flash-alert-outline',
+    scheduleLabel: 'Dispatch window',
+  },
+});
+
+const buildPriceRows = ({ pricing, part, urgencySurcharge, severity, colors }) => {
   const rows = [
     {
       key: 'visit',
@@ -95,8 +93,8 @@ const buildPriceRows = ({ pricing, part, urgencySurcharge, severity }) => {
       label: part.name,
       value: part.price,
       sublabel: `MRP ${formatCurrency(part.mrp)} - Save ${formatCurrency(part.mrp - part.price)}`,
-      tone: COLORS.success,
-      bg: COLORS.successLight,
+      tone: colors.success,
+      bg: colors.successLight,
       highlightValue: true,
     });
   }
@@ -107,8 +105,8 @@ const buildPriceRows = ({ pricing, part, urgencySurcharge, severity }) => {
       icon: severity === 'urgent' ? 'flash-outline' : 'clock-fast',
       label: severity === 'urgent' ? 'Emergency surcharge' : 'Priority surcharge',
       value: urgencySurcharge,
-      tone: severity === 'urgent' ? COLORS.danger : COLORS.warning,
-      bg: severity === 'urgent' ? COLORS.dangerLight : COLORS.warningLight,
+      tone: severity === 'urgent' ? colors.danger : colors.warning,
+      bg: severity === 'urgent' ? colors.dangerLight : colors.warningLight,
     });
   }
 
@@ -117,8 +115,8 @@ const buildPriceRows = ({ pricing, part, urgencySurcharge, severity }) => {
     icon: 'receipt-text-outline',
     label: 'Platform fee',
     value: pricing.platformFee,
-    tone: COLORS.inkSecondary,
-    bg: '#F4F6F8',
+    tone: colors.inkSecondary,
+    bg: colors.surfaceMuted,
   });
 
   return rows;
@@ -135,6 +133,10 @@ export default function PriceSummary({
   navigation,
   onConfirm,
 }) {
+  const { isDark } = useAppTheme();
+  const colors = getThemeColors(isDark);
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const severityMetaMap = useMemo(() => createSeverityMeta(colors), [colors]);
   const { bottom } = useSafeAreaInsets();
   const [repairProtection, setRepairProtection] = useState(true);
   const scrollBottomPadding = bottom + 108;
@@ -146,12 +148,15 @@ export default function PriceSummary({
   };
   const part = problem?.id ? PARTS_CATALOG[problem.id] : null;
   const urgencySurcharge = severity === 'urgent' ? 150 : severity === 'moderate' ? 50 : 0;
-  const severityMeta = SEVERITY_META[severity] || SEVERITY_META.minor;
+  const severityMeta = severityMetaMap[severity] || severityMetaMap.minor;
   const displayProblem = customProblem || problem?.label || 'General service';
   const serviceAccent = service?.accentColor || BRAND_ORANGE;
   const serviceSoft = service?.lightColor || BRAND_SOFT;
   const scheduleValue = getScheduleValue({ severity, date, slot });
-  const priceRows = buildPriceRows({ pricing, part, urgencySurcharge, severity });
+  const priceRows = useMemo(
+    () => buildPriceRows({ pricing, part, urgencySurcharge, severity, colors }),
+    [pricing, part, urgencySurcharge, severity, colors]
+  );
 
   const subtotal =
     pricing.visitCharge +
@@ -266,7 +271,7 @@ export default function PriceSummary({
               <Text
                 style={[
                   styles.priceRowValue,
-                  item.highlightValue && { color: COLORS.success },
+                  item.highlightValue && { color: colors.success },
                 ]}
               >
                 {formatCurrency(item.value)}
@@ -296,7 +301,7 @@ export default function PriceSummary({
             <Switch
               value={repairProtection}
               onValueChange={setRepairProtection}
-              trackColor={{ false: '#D7DBE2', true: BRAND_ORANGE }}
+              trackColor={{ false: colors.border, true: BRAND_ORANGE }}
               thumbColor="#FFFFFF"
             />
           </View>
@@ -312,8 +317,8 @@ export default function PriceSummary({
 
       {part ? (
         <View style={styles.noteCard}>
-          <View style={[styles.noteIconWrap, { backgroundColor: COLORS.successLight }]}>
-            <Icon name="package-variant-closed" size={18} color={COLORS.success} />
+          <View style={[styles.noteIconWrap, { backgroundColor: colors.successLight }]}>
+            <Icon name="package-variant-closed" size={18} color={colors.success} />
           </View>
           <View style={styles.noteCopy}>
             <Text style={styles.noteTitle}>Verified part pricing</Text>
@@ -346,21 +351,20 @@ export default function PriceSummary({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors) => StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingHorizontal: SPACING.md,
     paddingTop: 14,
   },
-
   summaryCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E8ECF1',
+    borderColor: colors.border,
     padding: 14,
     marginBottom: 14,
     ...SHADOW.card,
@@ -386,13 +390,13 @@ const styles = StyleSheet.create({
   summaryService: {
     fontSize: 16,
     fontWeight: FONT.black,
-    color: COLORS.ink,
+    color: colors.ink,
     letterSpacing: -0.3,
   },
   summaryProblem: {
     fontSize: 12,
     lineHeight: 17,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
     marginTop: 2,
   },
   summarySeverityBadge: {
@@ -405,14 +409,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: FONT.bold,
   },
-
   metaCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#FAFBFC',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EEF1F4',
+    borderColor: colors.border,
     padding: 10,
     marginTop: 8,
   },
@@ -430,7 +433,7 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontSize: 11,
     fontWeight: FONT.bold,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     letterSpacing: 0.5,
     marginBottom: 3,
     textTransform: 'uppercase',
@@ -439,16 +442,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     fontWeight: FONT.medium,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   addressCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FAFBFC',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EEF1F4',
+    borderColor: colors.border,
     padding: 10,
     marginTop: 8,
   },
@@ -472,12 +475,11 @@ const styles = StyleSheet.create({
     fontWeight: FONT.bold,
     color: BRAND_ORANGE,
   },
-
   priceCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#E8ECF1',
+    borderColor: colors.border,
     padding: 18,
     marginBottom: 16,
     ...SHADOW.card,
@@ -495,7 +497,7 @@ const styles = StyleSheet.create({
   priceEyebrow: {
     fontSize: 11,
     fontWeight: FONT.bold,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
     letterSpacing: 1.2,
     marginBottom: 6,
   },
@@ -528,25 +530,24 @@ const styles = StyleSheet.create({
   priceRowLabel: {
     fontSize: 14,
     fontWeight: FONT.semibold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   priceRowSubLabel: {
     marginTop: 3,
     fontSize: 11,
     lineHeight: 16,
-    color: COLORS.inkMuted,
+    color: colors.inkMuted,
   },
   priceRowValue: {
     fontSize: 14,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   divider: {
     height: 1,
-    backgroundColor: COLORS.borderLight,
+    backgroundColor: colors.borderLight,
     marginVertical: 2,
   },
-
   protectionCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -575,13 +576,13 @@ const styles = StyleSheet.create({
   protectionTitle: {
     fontSize: 14,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   protectionText: {
     marginTop: 4,
     fontSize: 12,
     lineHeight: 18,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
   },
   protectionRight: {
     alignItems: 'flex-end',
@@ -592,19 +593,18 @@ const styles = StyleSheet.create({
     color: BRAND_ORANGE,
     marginBottom: 6,
   },
-
   totalRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: COLORS.borderLight,
+    borderTopColor: colors.borderLight,
   },
   totalLabel: {
     fontSize: 15,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
   },
   totalValue: {
     fontSize: 28,
@@ -612,14 +612,13 @@ const styles = StyleSheet.create({
     color: BRAND_ORANGE,
     letterSpacing: -0.8,
   },
-
   noteCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: COLORS.surface,
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E8ECF1',
+    borderColor: colors.border,
     padding: 14,
     marginBottom: 12,
     ...SHADOW.card,
@@ -638,15 +637,14 @@ const styles = StyleSheet.create({
   noteTitle: {
     fontSize: 14,
     fontWeight: FONT.bold,
-    color: COLORS.ink,
+    color: colors.ink,
     marginBottom: 4,
   },
   noteText: {
     fontSize: 12,
     lineHeight: 18,
-    color: COLORS.inkSecondary,
+    color: colors.inkSecondary,
   },
-
   confirmBtn: {
     flexDirection: 'row',
     alignItems: 'center',
