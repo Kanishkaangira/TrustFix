@@ -1,5 +1,5 @@
 // src/Screens/BookingFlow/SelectSeverity.js
-// Step 3 — Minor / Moderate / Urgent urgency selection
+// Step 3 - urgency selection
 
 import React, { useState } from 'react';
 import {
@@ -9,60 +9,87 @@ import {
   ScrollView,
   StyleSheet,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../../theme';
+
+const PROFILE_BRAND_ORANGE = '#FF6B2B';
 
 const SEVERITY_OPTIONS = [
   {
-    id:          'minor',
-    label:       'Minor — Can Wait',
-    sublabel:    'Book next 2–3 days',
-    description: 'Issue is non-critical. Choose your preferred date and time slot. Technician assigned in advance.',
-    icon:        '🟢',
-    dotColor:    '#4CAF50',
-    bgColor:     '#F1F8E9',
+    id: 'minor',
+    label: 'Minor',
+    sublabel: 'Visit in 2-3 days',
+    description: 'Best for non-critical issues.',
+    dotColor: COLORS.success,
+    bgColor: COLORS.successLight,
     borderColor: '#C5E1A5',
     accentColor: '#2E7D32',
-    badge:       'Best Value',
-    badgeColor:  '#4CAF50',
+    badge: 'Value',
+    badgeColor: COLORS.success,
+    helper: 'Choose slot next',
   },
   {
-    id:          'moderate',
-    label:       'Moderate — Fix Soon',
-    sublabel:    'Within 24 hours',
-    description: 'Issue needs attention soon. We assign the nearest available technician automatically.',
-    icon:        '🟡',
-    dotColor:    '#FF9800',
-    bgColor:     '#FFF8E1',
+    id: 'moderate',
+    label: 'Moderate',
+    sublabel: 'Within 24 hours',
+    description: 'Fast support with auto-assignment.',
+    dotColor: '#FF9800',
+    bgColor: '#FFF8E1',
     borderColor: '#FFE082',
     accentColor: '#E65100',
-    badge:       'Most Chosen',
-    badgeColor:  '#FF9800',
+    badge: 'Popular',
+    badgeColor: '#FF9800',
+    helper: 'Nearest tech auto-assigned',
   },
   {
-    id:          'urgent',
-    label:       'Urgent — Risk Now',
-    sublabel:    'Technician in 15–20 min',
-    description: 'Emergency dispatch. Nearest technician sent immediately. Higher priority surcharge applies.',
-    icon:        '🔴',
-    dotColor:    '#F44336',
-    bgColor:     '#FFEBEE',
+    id: 'urgent',
+    label: 'Urgent',
+    sublabel: '15-20 min dispatch',
+    description: 'Emergency help for risky issues.',
+    dotColor: COLORS.danger,
+    bgColor: COLORS.dangerLight,
     borderColor: '#EF9A9A',
     accentColor: '#C62828',
-    badge:       'Emergency',
-    badgeColor:  '#F44336',
+    badge: 'Emergency',
+    badgeColor: COLORS.danger,
+    helper: 'Emergency dispatch starts now',
   },
 ];
+
+const getButtonLabel = (selected) => {
+  if (selected === 'minor') {
+    return 'Next - Pick Slot';
+  }
+
+  if (selected === 'moderate') {
+    return 'Next - See Pricing';
+  }
+
+  if (selected === 'urgent') {
+    return 'Next - Confirm';
+  }
+
+  return 'Select urgency';
+};
 
 export default function SelectSeverity({ service, problem, onNext }) {
   const [selected, setSelected] = useState(null);
 
   const canProceed = selected !== null;
+  const serviceSoft = service?.lightColor || COLORS.primaryLight;
+  const serviceLabel = service?.shortLabel || service?.label || '';
+  const problemLabel = typeof problem === 'string' ? problem.trim() : '';
 
   const handleSelect = (option) => {
     setSelected(option.id);
   };
 
   const handleNext = () => {
-    if (!canProceed) return;
+    if (!canProceed) {
+      return;
+    }
+
     onNext(selected);
   };
 
@@ -72,272 +99,305 @@ export default function SelectSeverity({ service, problem, onNext }) {
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
-      {/* Heading */}
       <View style={styles.heading}>
         <Text style={styles.headingTitle}>How urgent is this?</Text>
         <Text style={styles.headingSubtitle}>
-          Your choice affects scheduling, pricing, and response time
+          This sets response time and pricing.
         </Text>
 
-        {/* Context pill — what they selected */}
-        {(service || problem) && (
-          <View style={styles.contextPill}>
-            <Text style={styles.contextText}>
-              {service?.icon}  {service?.label}
-              {problem ? `  ·  ${problem}` : ''}
-            </Text>
+        {(serviceLabel || problemLabel) ? (
+          <View style={styles.contextRow}>
+            {serviceLabel ? (
+              <View style={[styles.servicePill, { backgroundColor: serviceSoft }]}>
+                <Icon
+                  name={service?.icon || 'tools'}
+                  size={14}
+                  color={COLORS.primary}
+                />
+                <Text
+                  style={styles.servicePillText}
+                  numberOfLines={1}
+                >
+                  {serviceLabel}
+                </Text>
+              </View>
+            ) : null}
+
+            {problemLabel ? (
+              <View style={styles.problemPill}>
+                <Text style={styles.problemPillText} numberOfLines={1}>
+                  {problemLabel}
+                </Text>
+              </View>
+            ) : null}
           </View>
-        )}
+        ) : null}
       </View>
 
-      {/* Severity cards */}
       {SEVERITY_OPTIONS.map((option) => {
         const isSelected = selected === option.id;
+
         return (
           <TouchableOpacity
             key={option.id}
             style={[
               styles.card,
-              { borderColor: isSelected ? option.dotColor : '#EEEEEE' },
+              { borderColor: isSelected ? option.dotColor : COLORS.border },
               isSelected && { backgroundColor: option.bgColor },
             ]}
             onPress={() => handleSelect(option)}
-            activeOpacity={0.85}
+            activeOpacity={0.88}
           >
-            {/* Badge */}
             <View style={[styles.badge, { backgroundColor: option.badgeColor }]}>
               <Text style={styles.badgeText}>{option.badge}</Text>
             </View>
 
-            {/* Top row */}
             <View style={styles.cardTop}>
               <View style={[styles.dot, { backgroundColor: option.dotColor }]} />
+
               <View style={styles.cardTopText}>
-                <Text style={[styles.cardLabel, isSelected && { color: option.accentColor }]}>
+                <Text
+                  style={[
+                    styles.cardLabel,
+                    isSelected && { color: option.accentColor },
+                  ]}
+                >
                   {option.label}
                 </Text>
                 <Text style={styles.cardSublabel}>{option.sublabel}</Text>
               </View>
 
-              {/* Radio circle */}
-              <View style={[
-                styles.radio,
-                { borderColor: isSelected ? option.dotColor : '#BDBDBD' },
-              ]}>
-                {isSelected && (
-                  <View style={[styles.radioFill, { backgroundColor: option.dotColor }]} />
-                )}
+              <View
+                style={[
+                  styles.radio,
+                  { borderColor: isSelected ? option.dotColor : COLORS.inkMuted },
+                ]}
+              >
+                {isSelected ? (
+                  <View
+                    style={[styles.radioFill, { backgroundColor: option.dotColor }]}
+                  />
+                ) : null}
               </View>
             </View>
 
-            {/* Description */}
             <Text style={styles.cardDescription}>{option.description}</Text>
 
-            {/* SLA strip when selected */}
-            {isSelected && (
+            {isSelected ? (
               <View style={[styles.slaStrip, { borderColor: option.borderColor }]}>
                 <Text style={[styles.slaText, { color: option.accentColor }]}>
-                  {option.id === 'minor'    && '📅  You will pick your date & time in the next step'}
-                  {option.id === 'moderate' && '⚙️  We auto-assign the nearest technician for you'}
-                  {option.id === 'urgent'   && '🚨  Emergency dispatch — technician en route shortly'}
+                  {option.helper}
                 </Text>
               </View>
-            )}
+            ) : null}
           </TouchableOpacity>
         );
       })}
 
-      {/* Info note */}
       <View style={styles.infoBox}>
-        <Text style={styles.infoText}>
-          ℹ️  Our AI also suggests urgency based on your problem — you can override it anytime.
-        </Text>
+        <Text style={styles.infoText}>You can change this before payment.</Text>
       </View>
 
-      {/* CTA */}
       <TouchableOpacity
-        style={[styles.nextBtn, !canProceed && styles.nextBtnDisabled]}
+        style={[
+          styles.nextBtn,
+          canProceed ? styles.nextBtnEnabled : styles.nextBtnDisabled,
+          !canProceed && styles.nextBtnDisabled,
+        ]}
         onPress={handleNext}
         activeOpacity={0.9}
         disabled={!canProceed}
       >
-        <Text style={styles.nextBtnText}>
-          {selected === 'minor'
-            ? 'Next — Pick a Slot  →'
-            : selected === 'moderate'
-            ? 'Next — See Pricing  →'
-            : selected === 'urgent'
-            ? 'Next — Confirm Dispatch  →'
-            : 'Select urgency to continue'}
-        </Text>
+        <Text style={styles.nextBtnText}>{getButtonLabel(selected)}</Text>
       </TouchableOpacity>
 
-      <View style={{ height: 32 }} />
+      <View style={styles.bottomSpacer} />
     </ScrollView>
   );
 }
 
-const ORANGE = '#FF5722';
-
 const styles = StyleSheet.create({
   container: {
-    flex:            1,
-    backgroundColor: '#FAFAFA',
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom:     20,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.lg,
   },
 
-  // Heading
   heading: {
-    paddingTop:    20,
-    paddingBottom: 16,
+    paddingTop: 20,
+    paddingBottom: SPACING.md,
   },
   headingTitle: {
-    fontSize:      22,
-    fontWeight:    '800',
-    color:         '#1A1A1A',
+    fontSize: 22,
+    fontWeight: FONT.black,
+    color: COLORS.ink,
     letterSpacing: -0.5,
   },
   headingSubtitle: {
-    fontSize:  14,
-    color:     '#757575',
-    marginTop:  4,
-  },
-  contextPill: {
-    marginTop:         10,
-    alignSelf:         'flex-start',
-    backgroundColor:   '#F3E5F5',
-    borderRadius:      20,
-    paddingHorizontal: 12,
-    paddingVertical:    5,
-  },
-  contextText: {
-    fontSize:   12,
-    color:      '#7B1FA2',
-    fontWeight: '600',
+    fontSize: 14,
+    color: COLORS.inkSecondary,
+    marginTop: 4,
   },
 
-  // Severity card
+  contextRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+  },
+  servicePill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  servicePillText: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    marginLeft: 6,
+    maxWidth: 150,
+    color: COLORS.primary,
+  },
+  problemPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primaryMid,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginBottom: 8,
+    maxWidth: '100%',
+  },
+  problemPillText: {
+    fontSize: 12,
+    color: COLORS.inkSecondary,
+    fontWeight: FONT.medium,
+  },
+
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius:    16,
-    borderWidth:     2,
-    borderColor:     '#EEEEEE',
-    padding:         16,
-    marginBottom:    12,
-    position:        'relative',
-    // Shadow
-    shadowColor:    '#000',
-    shadowOffset:   { width: 0, height: 2 },
-    shadowOpacity:  0.06,
-    shadowRadius:   6,
-    elevation:      2,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 2,
+    padding: SPACING.md,
+    marginBottom: 12,
+    position: 'relative',
+    ...SHADOW.card,
   },
   badge: {
-    position:          'absolute',
-    top:               -1,
-    right:             16,
+    position: 'absolute',
+    top: -1,
+    right: 16,
     paddingHorizontal: 10,
-    paddingVertical:    3,
-    borderBottomLeftRadius:  8,
+    paddingVertical: 3,
+    borderBottomLeftRadius: 8,
     borderBottomRightRadius: 8,
   },
   badgeText: {
-    color:      '#FFFFFF',
-    fontSize:   10,
-    fontWeight: '700',
+    color: COLORS.surface,
+    fontSize: 10,
+    fontWeight: FONT.bold,
     letterSpacing: 0.5,
   },
   cardTop: {
     flexDirection: 'row',
-    alignItems:    'center',
-    marginBottom:  8,
+    alignItems: 'center',
+    marginBottom: 8,
   },
   dot: {
-    width:        12,
-    height:       12,
-    borderRadius:  6,
-    marginRight:  10,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 10,
   },
   cardTopText: {
     flex: 1,
   },
   cardLabel: {
-    fontSize:   16,
-    fontWeight: '700',
-    color:      '#1A1A1A',
+    fontSize: 16,
+    fontWeight: FONT.bold,
+    color: COLORS.ink,
   },
   cardSublabel: {
-    fontSize:  13,
-    color:     '#757575',
-    marginTop:  2,
-    fontWeight: '500',
+    fontSize: 13,
+    color: COLORS.inkSecondary,
+    marginTop: 2,
+    fontWeight: FONT.medium,
   },
   radio: {
-    width:        22,
-    height:       22,
+    width: 22,
+    height: 22,
     borderRadius: 11,
-    borderWidth:  2,
-    alignItems:   'center',
-    justifyContent:'center',
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   radioFill: {
-    width:        11,
-    height:       11,
-    borderRadius: 5.5,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
   },
   cardDescription: {
-    fontSize:   13,
-    color:      '#616161',
+    fontSize: 13,
+    color: COLORS.inkSecondary,
     lineHeight: 19,
   },
   slaStrip: {
-    marginTop:    10,
+    marginTop: 10,
     borderTopWidth: 1,
-    paddingTop:   10,
+    paddingTop: 10,
   },
   slaText: {
-    fontSize:   13,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: FONT.semibold,
   },
 
-  // Info box
   infoBox: {
-    backgroundColor:   '#E3F2FD',
-    borderRadius:      10,
-    padding:           12,
-    marginBottom:      16,
+    backgroundColor: COLORS.primaryLight,
+    borderColor: COLORS.primaryMid,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: 12,
+    marginBottom: SPACING.md,
   },
   infoText: {
-    fontSize:   12,
-    color:      '#1565C0',
-    fontWeight: '500',
-    lineHeight: 18,
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: FONT.medium,
+    lineHeight: 17,
   },
 
-  // CTA
   nextBtn: {
-    backgroundColor: ORANGE,
-    borderRadius:    14,
+    borderRadius: RADIUS.lg,
     paddingVertical: 16,
-    alignItems:      'center',
-    shadowColor:     ORANGE,
-    shadowOffset:    { width: 0, height: 4 },
-    shadowOpacity:   0.35,
-    shadowRadius:    10,
-    elevation:       6,
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+  },
+  nextBtnEnabled: {
+    backgroundColor: PROFILE_BRAND_ORANGE,
+    shadowColor: PROFILE_BRAND_ORANGE,
+    shadowOpacity: 0.35,
+    elevation: 6,
   },
   nextBtnDisabled: {
-    backgroundColor: '#BDBDBD',
-    shadowOpacity:   0,
-    elevation:       0,
+    backgroundColor: COLORS.inkMuted,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   nextBtnText: {
-    color:         '#FFFFFF',
-    fontSize:      16,
-    fontWeight:    '700',
+    color: COLORS.surface,
+    fontSize: 16,
+    fontWeight: FONT.bold,
     letterSpacing: 0.3,
+  },
+  bottomSpacer: {
+    height: 32,
   },
 });

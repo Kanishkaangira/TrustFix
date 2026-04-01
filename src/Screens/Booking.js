@@ -13,9 +13,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import SelectService  from './BookingFlow/SelectService';
 import SelectProblem  from './BookingFlow/SelectProblem';
@@ -28,7 +28,7 @@ import { COLORS, FONT, SPACING } from '../theme';
 import {
   getDefaultAddress,
   subscribeToAddresses,
-} from '../store/addressStore';
+} from '../state/addressStore';
 
 // ─── Step constants ────────────────────────────────────────────
 const STEPS = {
@@ -51,6 +51,8 @@ const FALLBACK_ADDRESS = {
   label: 'Home',
   address: '42, Green Park, New Delhi',
 };
+const PROFILE_BRAND_ORANGE = '#FF6B2B';
+
 
 // ─── Main controller ───────────────────────────────────────────
 export default function Bookings({ route, navigation }) {
@@ -106,13 +108,19 @@ export default function Bookings({ route, navigation }) {
       setHasCustomAddress(true);
     }
 
-    if (returnStep === STEPS.SELECT_SLOT || addressTrigger) {
+    const targetReturnStep = (
+      returnStep === STEPS.SELECT_SLOT || returnStep === STEPS.PRICE_SUMMARY
+    )
+      ? returnStep
+      : null;
+
+    if (targetReturnStep || addressTrigger) {
       if (!returnedAddress) {
         setBookingAddress(defaultAddress || FALLBACK_ADDRESS);
         setHasCustomAddress(false);
       }
 
-      setStep(STEPS.SELECT_SLOT);
+      setStep(targetReturnStep || STEPS.SELECT_SLOT);
       navigation.setParams({
         selectedAddress: undefined,
         returnStep: undefined,
@@ -244,6 +252,7 @@ export default function Bookings({ route, navigation }) {
             date={date}
             slot={slot}
             address={currentAddress}
+            navigation={navigation}
             onConfirm={() =>
               navigation.navigate('Payment', {
                 service, problem, customProblem, severity, date, slot, address: currentAddress,
@@ -259,16 +268,17 @@ export default function Bookings({ route, navigation }) {
 
   const progressStep = step;
   const showHeader   = step !== STEPS.SELECT_SERVICE;
-  const topColor = step === STEPS.SELECT_SERVICE ? '#FF6B3D' : COLORS.surface;
-  const statusBarStyle = step === STEPS.SELECT_SERVICE ? 'light-content' : 'dark-content';
+  const isStartingStep = step === STEPS.SELECT_SERVICE;
+  const wrapperTopColor = isStartingStep ? PROFILE_BRAND_ORANGE : '#FFFFFF';
+  const statusBarStyle = isStartingStep ? 'light-content' : 'dark-content';
 
   return (
     <ScreenWrapper
-      topColor={topColor}
+      topColor={wrapperTopColor}
       bottomColor={COLORS.background}
       statusBarStyle={statusBarStyle}
     >
-      <SafeAreaView style={[styles.safe, { backgroundColor: topColor }]}>
+      <SafeAreaView style={[styles.safe, isStartingStep && styles.safeStarting]}>
 
       {/* ════════════════════════════════════════════════════════
            TOP BLOCK — header row + step dots + fill bar
@@ -277,6 +287,7 @@ export default function Bookings({ route, navigation }) {
           ════════════════════════════════════════════════════════ */}
       {showHeader && (
         <View style={styles.topBlock}>
+
 
           {/* ── Row 1: back · service pill · spacer ── */}
           <View style={styles.headerRow}>
@@ -287,62 +298,36 @@ export default function Bookings({ route, navigation }) {
               style={styles.backBtnHit}
               activeOpacity={0.65}
             >
-              <View style={styles.backBtnCircle}>
-                <View style={styles.chevron} />
-              </View>
+              <Icon
+                name="chevron-left"
+                size={28}
+                color={service?.accentColor || COLORS.primary}
+              />
             </TouchableOpacity>
 
             {/* SERVICE PILL — icon initial + name + check dot */}
-            <View
-              style={[
-                styles.servicePill,
-                {
-                  backgroundColor: service?.lightColor  || COLORS.primaryLight,
-                  borderColor:     service?.accentColor || COLORS.primary,
-                },
-              ]}
-            >
-              {/* Colored circle with service initial */}
-              <View
-                style={[
-                  styles.pillIconCircle,
-                  { backgroundColor: service?.accentColor || COLORS.primary },
-                ]}
-              >
-                <Text style={styles.pillInitial}>
-                  {service?.label?.charAt(0) || 'S'}
+            <View style={styles.serviceSummary}>
+              <View style={styles.serviceSummaryText}>
+                <Text
+                  style={[
+                    styles.serviceSummaryName,
+                    { color: service?.accentColor || COLORS.primary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {service?.shortLabel || service?.label || 'Book a Service'}
                 </Text>
               </View>
 
-              {/* Service short name */}
-              <Text
-                style={[
-                  styles.pillName,
-                  { color: service?.accentColor || COLORS.primary },
-                ]}
-                numberOfLines={1}
-              >
-                {service?.shortLabel || 'Book a Service'}
-              </Text>
-
-              {/* Locked-in indicator dot */}
-              <View
-                style={[
-                  styles.pillCheckRing,
-                  { borderColor: service?.accentColor || COLORS.primary },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.pillCheckFill,
-                    { backgroundColor: service?.accentColor || COLORS.primary },
-                  ]}
-                />
-              </View>
             </View>
 
             {/* Mirror spacer — keeps pill centered */}
-            <View style={styles.spacer} />
+            <View style={styles.inlineBrandWrap}>
+              <Text style={styles.inlineBrandText}>
+                <Text style={styles.inlineBrandTrust}>Trust</Text>
+                <Text style={styles.inlineBrandFix}>Fix</Text>
+              </Text>
+            </View>
           </View>
 
           {/* ── Row 2: step dots ── */}
@@ -404,12 +389,15 @@ const styles = StyleSheet.create({
 
   safe: {
     flex:            1,
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#FFFFFF',
+  },
+  safeStarting: {
+    backgroundColor: PROFILE_BRAND_ORANGE,
   },
 
   // One unified white card — header + dots + bar, no internal gaps
   topBlock: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#FBFCFE',
     shadowColor:     '#000',
     shadowOffset:    { width: 0, height: 2 },
     shadowOpacity:   0.07,
@@ -423,101 +411,132 @@ const styles = StyleSheet.create({
     alignItems:        'center',
     justifyContent:    'space-between',
     paddingHorizontal: SPACING.md,
-    paddingTop:        12,
-    paddingBottom:     10,
+    paddingTop:        16,
+    paddingBottom:     12,
+    minHeight:         44,
   },
 
   // Hit area (large) — circle is visually smaller inside
   backBtnHit: {
-    width:          40,
-    height:         40,
+    width:          32,
+    height:         32,
     alignItems:     'center',
     justifyContent: 'center',
-  },
-
-  // Frosted blur circle
-  backBtnCircle: {
-    width:           38,
-    height:          38,
-    borderRadius:    19,
-    // Frosted glass effect — semi-transparent tinted bg + soft border
-    backgroundColor: Platform.OS === 'ios'
-      ? 'rgba(118,118,128,0.12)'   // iOS material
-      : 'rgba(0,0,0,0.07)',        // Android equivalent
-    borderWidth:     1,
-    borderColor:     Platform.OS === 'ios'
-      ? 'rgba(118,118,128,0.18)'
-      : 'rgba(0,0,0,0.09)',
-    alignItems:      'center',
-    justifyContent:  'center',
-  },
-
-  chevron: {
-    width:             8,
-    height:            8,
-    borderLeftWidth:   2,
-    borderBottomWidth: 2,
-    borderColor:       COLORS.ink,
-    transform:         [{ rotate: '45deg' }],
-    marginLeft:        3,
   },
 
   // ── Service pill ─────────────────────────────────────────────
   servicePill: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    gap:            7,
-    paddingLeft:    4,     // icon circle sits at left edge
-    paddingRight:   10,
-    paddingVertical: 4,
-    borderRadius:   100,
-    borderWidth:    1.5,
-    maxWidth:       210,
+    flex:            1,
+    flexDirection:   'row',
+    alignItems:      'center',
+    backgroundColor: COLORS.surface,
+    paddingLeft:     6,
+    paddingRight:    10,
+    paddingVertical: 6,
+    borderRadius:    18,
+    borderWidth:     1.5,
+    marginHorizontal: 12,
+    minWidth:        0,
+    shadowColor:     '#111318',
+    shadowOffset:    { width: 0, height: 3 },
+    shadowOpacity:   0.05,
+    shadowRadius:    8,
+    elevation:       2,
   },
 
-  // Colored circle showing service initial letter
-  pillIconCircle: {
-    width:          26,
-    height:         26,
-    borderRadius:   13,
+  serviceIconShell: {
+    width:          52,
+    height:         52,
+    borderRadius:   16,
     alignItems:     'center',
     justifyContent: 'center',
     flexShrink:     0,
   },
-  pillInitial: {
-    fontSize:   11,
-    fontWeight: FONT.black,
-    color:      '#FFFFFF',
+  pillIconCircle: {
+    width:          36,
+    height:         36,
+    borderRadius:   12,
+    alignItems:     'center',
+    justifyContent: 'center',
+    flexShrink:     0,
+  },
+  pillTextWrap: {
+    flex:            1,
+    minWidth:        0,
+    paddingHorizontal: 12,
+  },
+  pillEyebrow: {
+    fontSize:      10,
+    fontWeight:    FONT.bold,
+    color:         COLORS.inkMuted,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    marginBottom:  3,
   },
 
   // Service name text
   pillName: {
-    fontSize:      13,
-    fontWeight:    FONT.bold,
-    letterSpacing: 0.1,
+    fontSize:      15,
+    fontWeight:    FONT.black,
+    color:         COLORS.ink,
+    letterSpacing: -0.2,
     flexShrink:    1,
   },
 
   // Small ring with filled center — "locked in" indicator
   pillCheckRing: {
-    width:          14,
-    height:         14,
-    borderRadius:   7,
-    borderWidth:    1.5,
+    width:          28,
+    height:         28,
+    borderRadius:   14,
+    borderWidth:    1,
     alignItems:     'center',
     justifyContent: 'center',
     flexShrink:     0,
   },
-  pillCheckFill: {
-    width:        6,
-    height:       6,
-    borderRadius: 3,
+
+  serviceSummary: {
+    flex:            1,
+    justifyContent:  'center',
+    marginLeft:      8,
+    marginRight:     12,
+    minHeight:       32,
+    minWidth:        0,
+  },
+  serviceSummaryText: {
+    flex:         1,
+    justifyContent: 'center',
+    minWidth:     0,
+    paddingRight: 8,
+    minHeight:    32,
+  },
+  serviceSummaryName: {
+    fontSize:      17,
+    fontWeight:    FONT.black,
+    letterSpacing: -0.3,
+    lineHeight:    22,
+    includeFontPadding: false,
   },
 
-  // Mirror of backBtnHit to keep pill centered
-  spacer: {
-    width:  40,
-    height: 40,
+  inlineBrandWrap: {
+    minWidth:       78,
+    minHeight:      32,
+    alignItems:     'flex-end',
+    justifyContent: 'center',
+    marginLeft:     4,
+  },
+  inlineBrandText: {
+    fontSize:      20,
+    fontWeight:    '800',
+    letterSpacing: -0.5,
+    lineHeight:    22,
+    textAlign:     'right',
+    includeFontPadding: false,
+  },
+  inlineBrandTrust: {
+    color: COLORS.ink,
+  },
+  inlineBrandFix: {
+    color: COLORS.primary,
   },
 
   // ── Step dots ────────────────────────────────────────────────

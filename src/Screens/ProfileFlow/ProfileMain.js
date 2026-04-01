@@ -120,7 +120,7 @@ const gi = StyleSheet.create({
   appearInner: { width: 8, height: 6, borderRadius: 2, margin: 2 },
 });
 
-const profile = {
+const DEFAULT_PROFILE = {
   name: 'Rahul Sharma',
   phone: '+91 98765 43210',
   email: 'rahul.sharma@gmail.com',
@@ -128,7 +128,7 @@ const profile = {
   planMeta: `Active \u00B7 Renews Apr 11, 2026`,
 };
 
-export default function ProfileMain({ onNavigate }) {
+export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
   const { bottom } = useSafeAreaInsets();
   const scrollBottomPadding = bottom + 96;
 
@@ -152,7 +152,10 @@ export default function ProfileMain({ onNavigate }) {
           <View style={[styles.blobDark, { width: 190, height: 190, top: 108, left: -110 }]} />
 
           <View style={styles.heroHeader}>
-            <Text style={styles.heroBrand}>TrustFix</Text>
+            <Text style={styles.heroBrand}>
+              <Text style={styles.heroBrandTrust}>Trust</Text>
+              <Text style={styles.heroBrandFix}>Fix</Text>
+            </Text>
           </View>
 
           <View style={styles.heroRow}>
@@ -386,8 +389,13 @@ const styles = StyleSheet.create({
   heroBrand: {
     fontSize: 24,
     fontWeight: '800',
-    color: PC.white,
     letterSpacing: -0.5,
+  },
+  heroBrandTrust: {
+    color: PC.ink,
+  },
+  heroBrandFix: {
+    color: PC.white,
   },
   heroRow: {
     flexDirection: 'row',

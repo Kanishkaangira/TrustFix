@@ -19,7 +19,12 @@ import {
   getAddresses,
   subscribeToAddresses,
   updateAddresses,
-} from '../store/addressStore';
+} from '../state/addressStore';
+import {
+  getProfile,
+  subscribeToProfile,
+  updateProfile,
+} from '../state/profileStore';
 
 const SCREENS = {
   MAIN: 'main',
@@ -38,7 +43,9 @@ const VALID_SCREENS = Object.values(SCREENS);
 export default function Profile({ navigation, route }) {
   const [activeScreen, setActiveScreen] = useState(SCREENS.MAIN);
   const [addresses, setAddresses] = useState(() => getAddresses());
+  const [profile, setProfile] = useState(() => getProfile());
   const returnToBooking = route?.params?.returnToBooking === true;
+  const bookingReturnStep = route?.params?.returnStep || 4;
 
   useEffect(() => {
     const targetScreen = route?.params?.openScreen;
@@ -58,8 +65,13 @@ export default function Profile({ navigation, route }) {
   }, [activeScreen, navigation]);
 
   useEffect(() => subscribeToAddresses(setAddresses), []);
+  useEffect(() => subscribeToProfile(setProfile), []);
 
   const navigate = (screen) => setActiveScreen(screen);
+
+  const handleSaveProfile = useCallback((updates) => {
+    updateProfile(updates);
+  }, []);
 
   const goBack = useCallback(() => {
     if (returnToBooking && activeScreen === SCREENS.ADDRESSES) {
@@ -68,16 +80,17 @@ export default function Profile({ navigation, route }) {
         openScreen: undefined,
         profileScreen: SCREENS.MAIN,
         returnToBooking: undefined,
+        returnStep: undefined,
       });
       navigation.navigate('Booking', {
-        returnStep: 4,
+        returnStep: bookingReturnStep,
         addressTrigger: Date.now(),
       });
       return;
     }
 
     setActiveScreen(SCREENS.MAIN);
-  }, [activeScreen, navigation, returnToBooking]);
+  }, [activeScreen, bookingReturnStep, navigation, returnToBooking]);
 
   useFocusEffect(
     useCallback(() => {
@@ -149,9 +162,10 @@ export default function Profile({ navigation, route }) {
         openScreen: undefined,
         profileScreen: SCREENS.MAIN,
         returnToBooking: undefined,
+        returnStep: undefined,
       });
       navigation.navigate('Booking', {
-        returnStep: 4,
+        returnStep: bookingReturnStep,
         selectedAddress,
         addressTrigger: Date.now(),
       });
@@ -164,7 +178,13 @@ export default function Profile({ navigation, route }) {
   const renderScreen = () => {
     switch (activeScreen) {
       case SCREENS.EDIT_PROFILE:
-        return <EditProfileScreen onBack={goBack} />;
+        return (
+          <EditProfileScreen
+            onBack={goBack}
+            profile={profile}
+            onSaveProfile={handleSaveProfile}
+          />
+        );
       case SCREENS.NOTIFICATIONS:
         return <NotificationsScreen onBack={goBack} />;
       case SCREENS.ADDRESSES:
@@ -190,7 +210,7 @@ export default function Profile({ navigation, route }) {
       case SCREENS.SUBSCRIPTION:
         return <SubscriptionScreen onBack={goBack} />;
       default:
-        return <ProfileMain onNavigate={navigate} />;
+        return <ProfileMain onNavigate={navigate} profile={profile} />;
     }
   };
 

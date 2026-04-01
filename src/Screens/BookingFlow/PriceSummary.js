@@ -1,5 +1,5 @@
 // src/Screens/BookingFlow/PriceSummary.js
-// Step 5 — Price breakdown, repair protection toggle, confirm & pay
+// Step 5 - review booking, estimate, and continue to payment
 
 import React, { useState } from 'react';
 import {
@@ -10,18 +10,118 @@ import {
   Switch,
   StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import {
   PRICING,
   PARTS_CATALOG,
   REPAIR_PROTECTION_PRICE,
 } from '../../data/serviceProblems';
+import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../../theme';
 
-// Severity label map
-const SEVERITY_LABELS = {
-  minor:    { label: 'Minor',    color: '#4CAF50', bg: '#F1F8E9' },
-  moderate: { label: 'Moderate', color: '#FF9800', bg: '#FFF8E1' },
-  urgent:   { label: 'Urgent',   color: '#F44336', bg: '#FFEBEE' },
+const BRAND_ORANGE = '#FF6B2B';
+const BRAND_SOFT = '#FFF0E8';
+
+const SEVERITY_META = {
+  minor: {
+    label: 'Minor',
+    tone: COLORS.success,
+    bg: COLORS.successLight,
+    border: '#CFE8DA',
+    icon: 'calendar-clock-outline',
+    scheduleLabel: 'Scheduled visit',
+  },
+  moderate: {
+    label: 'Moderate',
+    tone: '#2563EB',
+    bg: '#DBEAFE',
+    border: '#BFDBFE',
+    icon: 'account-clock-outline',
+    scheduleLabel: 'Dispatch window',
+  },
+  urgent: {
+    label: 'Urgent',
+    tone: COLORS.danger,
+    bg: COLORS.dangerLight,
+    border: '#F2CBC5',
+    icon: 'flash-alert-outline',
+    scheduleLabel: 'Dispatch window',
+  },
+};
+
+const formatCurrency = (value) => `\u20B9${value}`;
+
+const getScheduleValue = ({ severity, date, slot }) => {
+  if (severity === 'minor' && date && slot) {
+    return `${date.dayName}, ${date.date} ${date.month} - ${slot.label}`;
+  }
+
+  if (severity === 'moderate') {
+    return 'Within 24 hours';
+  }
+
+  if (severity === 'urgent') {
+    return 'Dispatch in 15 to 20 minutes';
+  }
+
+  return 'Will be confirmed';
+};
+
+const buildPriceRows = ({ pricing, part, urgencySurcharge, severity }) => {
+  const rows = [
+    {
+      key: 'visit',
+      icon: 'home-account',
+      label: 'Visit charge',
+      value: pricing.visitCharge,
+      tone: BRAND_ORANGE,
+      bg: BRAND_SOFT,
+    },
+    {
+      key: 'labour',
+      icon: 'hammer-wrench',
+      label: 'Labour cost',
+      value: pricing.labourCost,
+      tone: '#2563EB',
+      bg: '#EFF6FF',
+    },
+  ];
+
+  if (part) {
+    rows.push({
+      key: 'part',
+      icon: 'package-variant-closed',
+      label: part.name,
+      value: part.price,
+      sublabel: `MRP ${formatCurrency(part.mrp)} - Save ${formatCurrency(part.mrp - part.price)}`,
+      tone: COLORS.success,
+      bg: COLORS.successLight,
+      highlightValue: true,
+    });
+  }
+
+  if (urgencySurcharge > 0) {
+    rows.push({
+      key: 'urgency',
+      icon: severity === 'urgent' ? 'flash-outline' : 'clock-fast',
+      label: severity === 'urgent' ? 'Emergency surcharge' : 'Priority surcharge',
+      value: urgencySurcharge,
+      tone: severity === 'urgent' ? COLORS.danger : COLORS.warning,
+      bg: severity === 'urgent' ? COLORS.dangerLight : COLORS.warningLight,
+    });
+  }
+
+  rows.push({
+    key: 'platform',
+    icon: 'receipt-text-outline',
+    label: 'Platform fee',
+    value: pricing.platformFee,
+    tone: COLORS.inkSecondary,
+    bg: '#F4F6F8',
+  });
+
+  return rows;
 };
 
 export default function PriceSummary({
@@ -31,21 +131,28 @@ export default function PriceSummary({
   severity,
   date,
   slot,
+  address,
+  navigation,
   onConfirm,
 }) {
+  const { bottom } = useSafeAreaInsets();
   const [repairProtection, setRepairProtection] = useState(true);
+  const scrollBottomPadding = bottom + 108;
 
-  // Pull base pricing for this service
-  const pricing = PRICING[service?.id] || { visitCharge: 149, labourCost: 300, platformFee: 49 };
-
-  // Pull part if this problem has one
-  const partKey = problem?.id;
-  const part    = partKey ? PARTS_CATALOG[partKey] : null;
-
-  // Surge multiplier for urgent bookings
+  const pricing = PRICING[service?.id] || {
+    visitCharge: 149,
+    labourCost: 300,
+    platformFee: 49,
+  };
+  const part = problem?.id ? PARTS_CATALOG[problem.id] : null;
   const urgencySurcharge = severity === 'urgent' ? 150 : severity === 'moderate' ? 50 : 0;
+  const severityMeta = SEVERITY_META[severity] || SEVERITY_META.minor;
+  const displayProblem = customProblem || problem?.label || 'General service';
+  const serviceAccent = service?.accentColor || BRAND_ORANGE;
+  const serviceSoft = service?.lightColor || BRAND_SOFT;
+  const scheduleValue = getScheduleValue({ severity, date, slot });
+  const priceRows = buildPriceRows({ pricing, part, urgencySurcharge, severity });
 
-  // Total calculation
   const subtotal =
     pricing.visitCharge +
     pricing.labourCost +
@@ -54,420 +161,513 @@ export default function PriceSummary({
     pricing.platformFee +
     (repairProtection ? REPAIR_PROTECTION_PRICE : 0);
 
-  const severityMeta = SEVERITY_LABELS[severity] || SEVERITY_LABELS.minor;
-  const displayProblem = customProblem || problem?.label || 'General Service';
-
-  // Scheduling info based on severity
-  const getScheduleInfo = () => {
-    if (severity === 'minor' && date && slot) {
-      return `${date.dayName}, ${date.date} ${date.month}  ·  ${slot.label}`;
-    }
-    if (severity === 'moderate') return 'Auto-assigned — within 24 hours';
-    if (severity === 'urgent')   return '🚨 Emergency dispatch — 15–20 min';
-    return '';
+  const handleChangeAddress = () => {
+    navigation?.navigate('Profile', {
+      openScreen: 'addresses',
+      returnToBooking: true,
+      returnStep: 5,
+    });
   };
 
   return (
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
+      style={styles.screen}
+      contentContainerStyle={[
+        styles.scrollContent,
+        { paddingBottom: scrollBottomPadding },
+      ]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Transparent pricing header */}
-      <View style={styles.transparencyBanner}>
-        <Text style={styles.transparencyText}>
-          ● 100% TRANSPARENT — ZERO HIDDEN FEES
-        </Text>
-      </View>
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryTopRow}>
+          <View style={[styles.summaryIconWrap, { backgroundColor: serviceSoft }]}>
+            <Icon
+              name={service?.icon || 'tools'}
+              size={28}
+              color={serviceAccent}
+            />
+          </View>
 
-      {/* Booking summary pill */}
-      <View style={styles.bookingSummary}>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryIcon}>{service?.icon}</Text>
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.summaryService}>{service?.label}</Text>
+          <View style={styles.summaryCopy}>
+            <Text style={styles.summaryService}>{service?.label || 'Home service'}</Text>
             <Text style={styles.summaryProblem}>{displayProblem}</Text>
           </View>
-          <View style={[styles.severityBadge, { backgroundColor: severityMeta.bg }]}>
-            <Text style={[styles.severityText, { color: severityMeta.color }]}>
+
+          <View
+            style={[
+              styles.summarySeverityBadge,
+              {
+                backgroundColor: severityMeta.bg,
+                borderColor: severityMeta.border,
+              },
+            ]}
+          >
+            <Text style={[styles.summarySeverityText, { color: severityMeta.tone }]}>
               {severityMeta.label}
             </Text>
           </View>
         </View>
 
-        {/* Schedule info */}
-        <View style={styles.scheduleRow}>
-          <Text style={styles.scheduleIcon}>
-            {severity === 'urgent' ? '🚨' : '📅'}
-          </Text>
-          <Text style={styles.scheduleText}>{getScheduleInfo()}</Text>
-        </View>
-      </View>
-
-      {/* ── Price breakdown card ── */}
-      <View style={styles.priceCard}>
-        <Text style={styles.priceCardTitle}>Price Breakdown</Text>
-
-        {/* Visit charge */}
-        <View style={styles.priceRow}>
-          <View style={styles.priceRowLeft}>
-            <Text style={styles.priceRowIcon}>🚗</Text>
-            <Text style={styles.priceRowLabel}>Visit Charge</Text>
+        <View style={styles.metaCard}>
+          <View style={[styles.metaIconWrap, { backgroundColor: severityMeta.bg }]}>
+            <Icon name={severityMeta.icon} size={18} color={severityMeta.tone} />
           </View>
-          <Text style={styles.priceRowValue}>₹{pricing.visitCharge}</Text>
-        </View>
-
-        {/* Labour */}
-        <View style={styles.priceRow}>
-          <View style={styles.priceRowLeft}>
-            <Text style={styles.priceRowIcon}>👨‍🔧</Text>
-            <Text style={styles.priceRowLabel}>Labour Cost</Text>
+          <View style={styles.metaCopy}>
+            <Text style={styles.metaLabel}>{severityMeta.scheduleLabel}</Text>
+            <Text style={styles.metaValue}>{scheduleValue}</Text>
           </View>
-          <Text style={styles.priceRowValue}>₹{pricing.labourCost}</Text>
         </View>
 
-        {/* Parts — only if applicable */}
-        {part && (
-          <View style={styles.priceRow}>
-            <View style={styles.priceRowLeft}>
-              <Text style={styles.priceRowIcon}>⚙️</Text>
-              <View>
-                <Text style={styles.priceRowLabel}>{part.name}</Text>
-                <Text style={styles.mrpText}>MRP ₹{part.mrp}</Text>
+        {address ? (
+          <View style={styles.addressCard}>
+            <View style={styles.addressLeft}>
+              <View style={[styles.metaIconWrap, { backgroundColor: BRAND_SOFT }]}>
+                <Icon name="map-marker-outline" size={18} color={BRAND_ORANGE} />
+              </View>
+              <View style={styles.metaCopy}>
+                <Text style={styles.metaLabel}>{address.label || 'Service address'}</Text>
+                <Text style={styles.metaValue}>{address.address || 'Address will be confirmed'}</Text>
               </View>
             </View>
-            <Text style={[styles.priceRowValue, styles.priceRowDiscount]}>₹{part.price}</Text>
+            <TouchableOpacity
+              style={styles.changeBtn}
+              onPress={handleChangeAddress}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.changeBtnText}>Change</Text>
+            </TouchableOpacity>
           </View>
-        )}
+        ) : null}
+      </View>
 
-        {/* Urgency surcharge */}
-        {urgencySurcharge > 0 && (
-          <View style={styles.priceRow}>
-            <View style={styles.priceRowLeft}>
-              <Text style={styles.priceRowIcon}>
-                {severity === 'urgent' ? '🚨' : '⏰'}
-              </Text>
-              <Text style={styles.priceRowLabel}>
-                {severity === 'urgent' ? 'Emergency Surcharge' : 'Priority Surcharge'}
-              </Text>
-            </View>
-            <Text style={styles.priceRowValue}>₹{urgencySurcharge}</Text>
+      <View style={styles.priceCard}>
+        <View style={styles.priceHeader}>
+          <View style={styles.priceHeaderCopy}>
+            <Text style={styles.priceEyebrow}>ESTIMATE</Text>
           </View>
-        )}
-
-        {/* Platform fee */}
-        <View style={styles.priceRow}>
-          <View style={styles.priceRowLeft}>
-            <Text style={styles.priceRowIcon}>📱</Text>
-            <Text style={styles.priceRowLabel}>Platform Fee</Text>
-          </View>
-          <Text style={styles.priceRowValue}>₹{pricing.platformFee}</Text>
         </View>
 
-        {/* Divider */}
+        <View style={styles.priceList}>
+          {priceRows.map((item) => (
+            <View key={item.key} style={styles.priceRow}>
+              <View style={styles.priceRowLeft}>
+                <View style={[styles.priceRowIconWrap, { backgroundColor: item.bg }]}>
+                  <Icon name={item.icon} size={18} color={item.tone} />
+                </View>
+
+                <View style={styles.priceRowCopy}>
+                  <Text style={styles.priceRowLabel}>{item.label}</Text>
+                  {item.sublabel ? (
+                    <Text style={styles.priceRowSubLabel}>{item.sublabel}</Text>
+                  ) : null}
+                </View>
+              </View>
+
+              <Text
+                style={[
+                  styles.priceRowValue,
+                  item.highlightValue && { color: COLORS.success },
+                ]}
+              >
+                {formatCurrency(item.value)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
         <View style={styles.divider} />
 
-        {/* Repair Protection toggle */}
-        <View style={styles.priceRow}>
-          <View style={styles.priceRowLeft}>
-            <Text style={styles.priceRowIcon}>🛡️</Text>
-            <View>
-              <Text style={styles.priceRowLabel}>Add Repair Protection</Text>
-              <Text style={styles.priceRowSub}>7-day coverage — only ₹{REPAIR_PROTECTION_PRICE}</Text>
+        <View style={styles.protectionCard}>
+          <View style={styles.protectionLeft}>
+            <View style={styles.protectionIconWrap}>
+              <Icon name="shield-check-outline" size={18} color={BRAND_ORANGE} />
+            </View>
+
+            <View style={styles.protectionCopy}>
+              <Text style={styles.protectionTitle}>Repair protection</Text>
+              <Text style={styles.protectionText}>7-day post-service cover.</Text>
             </View>
           </View>
-          <Switch
-            value={repairProtection}
-            onValueChange={setRepairProtection}
-            trackColor={{ false: '#E0E0E0', true: '#FF5722' }}
-            thumbColor="#FFFFFF"
-          />
+
+          <View style={styles.protectionRight}>
+            <Text style={styles.protectionPrice}>
+              +{formatCurrency(REPAIR_PROTECTION_PRICE)}
+            </Text>
+            <Switch
+              value={repairProtection}
+              onValueChange={setRepairProtection}
+              trackColor={{ false: '#D7DBE2', true: BRAND_ORANGE }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
         </View>
 
-        {/* Total */}
         <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Estimated Total</Text>
-          <Text style={styles.totalValue}>₹{subtotal}</Text>
+          <View>
+            <Text style={styles.totalLabel}>Amount due</Text>
+          </View>
+          <Text style={styles.totalValue}>{formatCurrency(subtotal)}</Text>
         </View>
       </View>
 
-      {/* Parts marketplace note */}
-      {part && (
-        <View style={styles.partsNote}>
-          <Text style={styles.partsNoteIcon}>🛒</Text>
-          <Text style={styles.partsNoteText}>
-            Parts at marketplace price — always below MRP. Technician picks from verified catalog.
-          </Text>
+      {part ? (
+        <View style={styles.noteCard}>
+          <View style={[styles.noteIconWrap, { backgroundColor: COLORS.successLight }]}>
+            <Icon name="package-variant-closed" size={18} color={COLORS.success} />
+          </View>
+          <View style={styles.noteCopy}>
+            <Text style={styles.noteTitle}>Verified part pricing</Text>
+            <Text style={styles.noteText}>Catalog price shown above.</Text>
+          </View>
         </View>
-      )}
+      ) : null}
 
-      {/* Safety protocol note */}
-      <View style={styles.safetyNote}>
-        <Text style={styles.safetyTitle}>🔐  Safety Protocol Included</Text>
-        <Text style={styles.safetyText}>
-          OTP-to-Start  ·  Live selfie verification  ·  Share technician location with family
-        </Text>
+      <View style={styles.noteCard}>
+        <View style={[styles.noteIconWrap, { backgroundColor: BRAND_SOFT }]}>
+          <Icon name="shield-account-outline" size={18} color={BRAND_ORANGE} />
+        </View>
+        <View style={styles.noteCopy}>
+          <Text style={styles.noteTitle}>Safety protocols included</Text>
+          <Text style={styles.noteText}>OTP and live verification included.</Text>
+        </View>
       </View>
 
-      {/* Confirm & Pay CTA */}
       <TouchableOpacity
         style={styles.confirmBtn}
         onPress={onConfirm}
-        activeOpacity={0.9}
+        activeOpacity={0.92}
       >
-        <Text style={styles.confirmBtnText}>Confirm & Pay  ₹{subtotal}  →</Text>
+        <Text style={styles.confirmBtnText}>Continue to payment</Text>
+        <Icon name="arrow-right" size={18} color="#FFFFFF" style={styles.confirmBtnIcon} />
       </TouchableOpacity>
 
-      {/* Payment note */}
-      <Text style={styles.paymentNote}>
-        💳  Pay after service is complete · 100% refund if cancelled before dispatch
-      </Text>
-
-      <View style={{ height: 32 }} />
+      <View style={styles.bottomSpace} />
     </ScrollView>
   );
 }
 
-const ORANGE = '#FF5722';
-const TEXT   = '#1A1A1A';
-
 const styles = StyleSheet.create({
-  container: {
-    flex:            1,
-    backgroundColor: '#FAFAFA',
+  screen: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom:     20,
+    paddingHorizontal: SPACING.md,
+    paddingTop: 14,
   },
 
-  // Transparency banner
-  transparencyBanner: {
-    backgroundColor: '#E8F5E9',
-    borderRadius:    10,
-    paddingVertical: 8,
-    alignItems:      'center',
-    marginTop:       16,
-    marginBottom:    12,
+  summaryCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E8ECF1',
+    padding: 14,
+    marginBottom: 14,
+    ...SHADOW.card,
   },
-  transparencyText: {
-    fontSize:      11,
-    fontWeight:    '800',
-    color:         '#2E7D32',
-    letterSpacing: 0.8,
+  summaryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
   },
-
-  // Booking summary
-  bookingSummary: {
-    backgroundColor: '#FFFFFF',
-    borderRadius:    16,
-    padding:         14,
-    marginBottom:    12,
-    borderWidth:     1.5,
-    borderColor:     '#EEEEEE',
-    shadowColor:    '#000',
-    shadowOffset:   { width: 0, height: 1 },
-    shadowOpacity:  0.05,
-    shadowRadius:   4,
-    elevation:      2,
+  summaryIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
-  summaryRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    marginBottom:    8,
-  },
-  summaryIcon: {
-    fontSize: 28,
+  summaryCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
   },
   summaryService: {
-    fontSize:   16,
-    fontWeight: '700',
-    color:      TEXT,
+    fontSize: 16,
+    fontWeight: FONT.black,
+    color: COLORS.ink,
+    letterSpacing: -0.3,
   },
   summaryProblem: {
-    fontSize:  13,
-    color:     '#757575',
-    marginTop:  2,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.inkSecondary,
+    marginTop: 2,
   },
-  severityBadge: {
-    paddingHorizontal: 10,
-    paddingVertical:    4,
-    borderRadius:      20,
+  summarySeverityBadge: {
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
   },
-  severityText: {
-    fontSize:   12,
-    fontWeight: '700',
-  },
-  scheduleRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F5F5F5',
-    paddingTop:     8,
-  },
-  scheduleIcon: {
-    fontSize:    16,
-    marginRight: 8,
-  },
-  scheduleText: {
-    fontSize:   13,
-    color:      '#616161',
-    fontWeight: '500',
-    flex:       1,
+  summarySeverityText: {
+    fontSize: 10,
+    fontWeight: FONT.bold,
   },
 
-  // Price card
-  priceCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius:    16,
-    padding:         16,
-    marginBottom:    12,
-    shadowColor:    '#000',
-    shadowOffset:   { width: 0, height: 2 },
-    shadowOpacity:  0.06,
-    shadowRadius:   8,
-    elevation:      3,
+  metaCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FAFBFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#EEF1F4',
+    padding: 10,
+    marginTop: 8,
   },
-  priceCardTitle: {
-    fontSize:      13,
-    fontWeight:    '800',
-    color:         '#9E9E9E',
-    letterSpacing: 0.8,
-    marginBottom:  14,
+  metaIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  metaCopy: {
+    flex: 1,
+  },
+  metaLabel: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: COLORS.inkMuted,
+    letterSpacing: 0.5,
+    marginBottom: 3,
+    textTransform: 'uppercase',
+  },
+  metaValue: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: FONT.medium,
+    color: COLORS.ink,
+  },
+  addressCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FAFBFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#EEF1F4',
+    padding: 10,
+    marginTop: 8,
+  },
+  addressLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+    paddingRight: 10,
+  },
+  changeBtn: {
+    alignSelf: 'center',
+    backgroundColor: BRAND_SOFT,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,43,0.16)',
+  },
+  changeBtnText: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    color: BRAND_ORANGE,
+  },
+
+  priceCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#E8ECF1',
+    padding: 18,
+    marginBottom: 16,
+    ...SHADOW.card,
+  },
+  priceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  priceHeaderCopy: {
+    flex: 1,
+    paddingRight: 14,
+  },
+  priceEyebrow: {
+    fontSize: 11,
+    fontWeight: FONT.bold,
+    color: COLORS.inkMuted,
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  priceList: {
+    marginBottom: 6,
   },
   priceRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom:   14,
+    marginBottom: 14,
   },
   priceRowLeft: {
     flexDirection: 'row',
-    alignItems:    'center',
-    flex:          1,
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 12,
   },
-  priceRowIcon: {
-    fontSize:    18,
-    marginRight: 10,
-    width:       26,
-    textAlign:  'center',
+  priceRowIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  priceRowCopy: {
+    flex: 1,
   },
   priceRowLabel: {
-    fontSize:   14,
-    color:      TEXT,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: FONT.semibold,
+    color: COLORS.ink,
   },
-  priceRowSub: {
-    fontSize:  11,
-    color:     '#9E9E9E',
-    marginTop:  2,
+  priceRowSubLabel: {
+    marginTop: 3,
+    fontSize: 11,
+    lineHeight: 16,
+    color: COLORS.inkMuted,
   },
   priceRowValue: {
-    fontSize:   14,
-    fontWeight: '700',
-    color:      TEXT,
-  },
-  priceRowDiscount: {
-    color: '#4CAF50',
-  },
-  mrpText: {
-    fontSize:          11,
-    color:             '#BDBDBD',
-    textDecorationLine:'line-through',
-    marginTop:          2,
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.ink,
   },
   divider: {
-    height:          1,
-    backgroundColor: '#F5F5F5',
-    marginBottom:    14,
+    height: 1,
+    backgroundColor: COLORS.borderLight,
+    marginVertical: 2,
   },
-  totalRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
+
+  protectionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop:       4,
-    borderTopWidth:  2,
-    borderTopColor:  '#F5F5F5',
-    paddingTop:      14,
+    paddingTop: 16,
+    paddingBottom: 16,
+  },
+  protectionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 12,
+  },
+  protectionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: BRAND_SOFT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  protectionCopy: {
+    flex: 1,
+  },
+  protectionTitle: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.ink,
+  },
+  protectionText: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: COLORS.inkSecondary,
+  },
+  protectionRight: {
+    alignItems: 'flex-end',
+  },
+  protectionPrice: {
+    fontSize: 12,
+    fontWeight: FONT.bold,
+    color: BRAND_ORANGE,
+    marginBottom: 6,
+  },
+
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
   },
   totalLabel: {
-    fontSize:   16,
-    fontWeight: '700',
-    color:      TEXT,
+    fontSize: 15,
+    fontWeight: FONT.bold,
+    color: COLORS.ink,
   },
   totalValue: {
-    fontSize:   24,
-    fontWeight: '900',
-    color:      ORANGE,
-    letterSpacing: -0.5,
+    fontSize: 28,
+    fontWeight: FONT.black,
+    color: BRAND_ORANGE,
+    letterSpacing: -0.8,
   },
 
-  // Parts note
-  partsNote: {
-    backgroundColor: '#F3E5F5',
-    borderRadius:    12,
-    padding:         12,
-    flexDirection:   'row',
-    alignItems:      'flex-start',
-    marginBottom:    12,
+  noteCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E8ECF1',
+    padding: 14,
+    marginBottom: 12,
+    ...SHADOW.card,
   },
-  partsNoteIcon: {
-    fontSize:    16,
-    marginRight: 8,
-    marginTop:    1,
+  noteIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  partsNoteText: {
-    flex:       1,
-    fontSize:   12,
-    color:      '#6A1B9A',
-    fontWeight: '500',
-    lineHeight: 18,
+  noteCopy: {
+    flex: 1,
   },
-
-  // Safety note
-  safetyNote: {
-    backgroundColor: '#E8F5E9',
-    borderRadius:    12,
-    padding:         12,
-    marginBottom:    16,
-  },
-  safetyTitle: {
-    fontSize:   13,
-    fontWeight: '700',
-    color:      '#1B5E20',
+  noteTitle: {
+    fontSize: 14,
+    fontWeight: FONT.bold,
+    color: COLORS.ink,
     marginBottom: 4,
   },
-  safetyText: {
-    fontSize:  12,
-    color:     '#2E7D32',
+  noteText: {
+    fontSize: 12,
     lineHeight: 18,
+    color: COLORS.inkSecondary,
   },
 
-  // Confirm CTA
   confirmBtn: {
-    backgroundColor: ORANGE,
-    borderRadius:    14,
-    paddingVertical: 18,
-    alignItems:      'center',
-    shadowColor:     ORANGE,
-    shadowOffset:    { width: 0, height: 4 },
-    shadowOpacity:   0.4,
-    shadowRadius:    12,
-    elevation:       8,
-    marginBottom:    10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BRAND_ORANGE,
+    borderRadius: 18,
+    paddingVertical: 17,
+    marginTop: 2,
+    shadowColor: BRAND_ORANGE,
+    ...SHADOW.cta,
   },
   confirmBtnText: {
-    color:         '#FFFFFF',
-    fontSize:      17,
-    fontWeight:    '800',
-    letterSpacing: 0.3,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: FONT.bold,
+    letterSpacing: 0.2,
   },
-
-  // Payment note
-  paymentNote: {
-    fontSize:  12,
-    color:     '#9E9E9E',
-    textAlign: 'center',
-    lineHeight: 18,
+  confirmBtnIcon: {
+    marginLeft: 8,
+  },
+  bottomSpace: {
+    height: 8,
   },
 });

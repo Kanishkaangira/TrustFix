@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
 import { PC, SubScreenShell } from '../../Components/ProfileComponents';
+import { INITIAL_PROFILE } from '../../state/profileStore';
 
 const InputField = ({
   label,
@@ -21,6 +22,7 @@ const InputField = ({
   keyboardType,
   maxLength,
   editable = true,
+  autoCapitalize = 'words',
 }) => (
   <View style={styles.fieldWrap}>
     <Text style={styles.fieldLabel}>{label}</Text>
@@ -33,20 +35,53 @@ const InputField = ({
       keyboardType={keyboardType || 'default'}
       maxLength={maxLength}
       editable={editable}
-      autoCapitalize="words"
+      autoCapitalize={autoCapitalize}
     />
   </View>
 );
 
-export default function EditProfileScreen({ onBack }) {
-  const [firstName, setFirstName] = useState('Rahul');
-  const [lastName, setLastName] = useState('Sharma');
-  const [phone, setPhone] = useState('+91 98765 43210');
-  const [email, setEmail] = useState('rahul.sharma@gmail.com');
+const splitName = (fullName = '') => {
+  const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
+  };
+};
 
-  const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+export default function EditProfileScreen({
+  onBack,
+  profile = INITIAL_PROFILE,
+  onSaveProfile,
+}) {
+  const { firstName: initialFirstName, lastName: initialLastName } = splitName(profile.name);
+  const [firstName, setFirstName] = useState(initialFirstName);
+  const [lastName, setLastName] = useState(initialLastName);
+  const [phone, setPhone] = useState(profile.phone || INITIAL_PROFILE.phone);
+  const [email, setEmail] = useState(profile.email || INITIAL_PROFILE.email);
+
+  useEffect(() => {
+    const { firstName: nextFirstName, lastName: nextLastName } = splitName(profile.name);
+    setFirstName(nextFirstName);
+    setLastName(nextLastName);
+    setPhone(profile.phone || INITIAL_PROFILE.phone);
+    setEmail(profile.email || INITIAL_PROFILE.email);
+  }, [profile.email, profile.name, profile.phone]);
+
+  const initials = [firstName, lastName]
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'RS';
 
   const handleSave = () => {
+    const nextName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
+
+    onSaveProfile?.({
+      name: nextName || profile.name || INITIAL_PROFILE.name,
+      phone: phone.trim() || profile.phone || INITIAL_PROFILE.phone,
+      email: email.trim() || profile.email || INITIAL_PROFILE.email,
+    });
+
     onBack();
   };
 
@@ -77,15 +112,7 @@ export default function EditProfileScreen({ onBack }) {
                 <View style={styles.avatar}>
                   <Text style={styles.avatarInitials}>{initials}</Text>
                 </View>
-
-                <TouchableOpacity style={styles.cameraBtn} activeOpacity={0.85}>
-                  <View style={styles.cameraBody}>
-                    <View style={styles.cameraLens} />
-                    <View style={styles.cameraNotch} />
-                  </View>
-                </TouchableOpacity>
               </View>
-              <Text style={styles.avatarHint}>Tap to update photo</Text>
             </View>
 
             <View style={styles.formCard}>
@@ -118,15 +145,8 @@ export default function EditProfileScreen({ onBack }) {
                 onChangeText={setPhone}
                 placeholder="+91 XXXXX XXXXX"
                 keyboardType="phone-pad"
-                maxLength={14}
-                editable={false}
+                maxLength={16}
               />
-              <View style={styles.fieldDivider} />
-              <Text style={styles.verifiedNote}>
-                Phone number is verified. Contact support to change
-              </Text>
-
-              <View style={styles.fieldDivider} />
 
               <InputField
                 label="Email Address"
@@ -135,6 +155,7 @@ export default function EditProfileScreen({ onBack }) {
                 placeholder="your@email.com"
                 keyboardType="email-address"
                 maxLength={60}
+                autoCapitalize="none"
               />
             </View>
 
@@ -181,57 +202,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: PC.white,
     letterSpacing: -0.5,
-  },
-
-  cameraBtn: {
-    position: 'absolute',
-    bottom: -6,
-    right: -6,
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    backgroundColor: PC.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: PC.border,
-    shadowColor: '#111318',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  cameraBody: {
-    width: 16,
-    height: 12,
-    borderWidth: 1.5,
-    borderColor: PC.inkMid,
-    borderRadius: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  cameraLens: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    borderWidth: 1.5,
-    borderColor: PC.inkMid,
-  },
-  cameraNotch: {
-    position: 'absolute',
-    top: -4,
-    left: 3,
-    width: 5,
-    height: 3,
-    borderRadius: 1,
-    backgroundColor: PC.inkMid,
-  },
-
-  avatarHint: {
-    fontSize: 12,
-    color: PC.muted,
-    fontWeight: '500',
   },
 
   formCard: {

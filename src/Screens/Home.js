@@ -11,7 +11,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -19,11 +18,13 @@ import ScreenWrapper from '../Components/ScreenWrapper';
 import {
   getDefaultAddress,
   subscribeToAddresses,
-} from '../store/addressStore';
+} from '../state/addressStore';
+import {
+  getProfile,
+  subscribeToProfile,
+} from '../state/profileStore';
 
 // ─── Screen width used for responsive card sizing ─────────────
-const { width } = Dimensions.get('window');
-
 // ════════════════════════════════════════════════════════════════
 //  DESIGN TOKENS
 //  All colors in one place — change here to retheme the screen
@@ -88,6 +89,27 @@ const FALLBACK_ADDRESS = {
   address: 'Select your default address',
 };
 
+const COLLAPSED_ADDRESS_CHAR_LIMIT = 19;
+
+const getCollapsedAddressPreview = (address) => {
+  const cleanAddress = String(address || '').trim();
+  if (cleanAddress.length <= COLLAPSED_ADDRESS_CHAR_LIMIT) {
+    return cleanAddress;
+  }
+
+  return `${cleanAddress.slice(0, COLLAPSED_ADDRESS_CHAR_LIMIT).trimEnd()}...`;
+};
+
+const getProfileInitials = (name = '') => {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
+
+  return initials || 'RS';
+};
+
 const AddressDropdownIcon = ({ expanded = false, disabled = false }) => (
   <View
     style={[
@@ -103,18 +125,24 @@ const AddressDropdownIcon = ({ expanded = false, disabled = false }) => (
 
 const Home = ({ navigation }) => {
   const [defaultAddress, setDefaultAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
+  const [profile, setProfile] = useState(() => getProfile());
   const [isAddressExpanded, setIsAddressExpanded] = useState(false);
-  const [isAddressLong, setIsAddressLong] = useState(false);
   const addressText = defaultAddress?.address || FALLBACK_ADDRESS.address;
+  const isAddressLong = addressText.length > COLLAPSED_ADDRESS_CHAR_LIMIT;
+  const collapsedAddressText = isAddressLong
+    ? getCollapsedAddressPreview(addressText)
+    : addressText;
+  const displayName = profile?.name || 'Rahul Sharma';
+  const displayInitials = getProfileInitials(displayName);
 
   useEffect(() => subscribeToAddresses((nextAddresses) => {
     const nextDefaultAddress = nextAddresses.find((item) => item.isDefault) || nextAddresses[0] || FALLBACK_ADDRESS;
     setDefaultAddress(nextDefaultAddress);
   }), []);
+  useEffect(() => subscribeToProfile(setProfile), []);
 
   useEffect(() => {
     setIsAddressExpanded(false);
-    setIsAddressLong(false);
   }, [addressText]);
 
   const openSearch = () => {
@@ -151,15 +179,21 @@ const Home = ({ navigation }) => {
 
         <LinearGradient
           colors={[C.coralDeep, C.coral, C.coralLight, '#FFD5C2', C.bgBody]}
-        locations={[0, 0.25, 0.55, 0.78, 1]}
-        style={styles.headerGradient}
-      >
+          locations={[0, 0.25, 0.55, 0.78, 1]}
+          style={styles.headerGradient}
+        >
+          <View style={[styles.blob, styles.blobLarge]} />
+          <View style={[styles.blob, styles.blobMedium]} />
+          <View style={[styles.blobDark, styles.blobAccent]} />
 
         {/* ── Top bar: TrustFix pill + bell + avatar ── */}
         <View style={styles.topRow}>
           {/* App name pill — left side */}
           <View style={styles.appNamePill}>
-            <Text style={styles.appNameText}>TrustFix</Text>
+            <Text style={styles.appNameText}>
+              <Text style={styles.appNameTrust}>Trust</Text>
+              <Text style={styles.appNameFix}>Fix</Text>
+            </Text>
           </View>
           {/* Icons — right side */}
           <View style={styles.topIcons}>
@@ -176,45 +210,42 @@ const Home = ({ navigation }) => {
               style={styles.avatarCircle}
               onPress={() => navigation.navigate('Profile', { openScreen: 'main' })}
             >
-              <Text style={styles.avatarText}>KA</Text>
+              <Text style={styles.avatarText}>{displayInitials}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* ── Tappable location row ── */}
         <View style={[styles.locationRow, isAddressExpanded && styles.locationRowExpanded]}>
-          <Icon name="map-marker" size={14} color="rgba(255,255,255,0.9)" />
-          <View style={styles.locationTextWrap}>
-            <Text
-              style={styles.locationTextMeasure}
-              onTextLayout={({ nativeEvent }) => {
-                const nextIsLong = nativeEvent.lines.length > 1;
-                setIsAddressLong((prev) => (prev === nextIsLong ? prev : nextIsLong));
-              }}
-            >
-              {addressText}
-            </Text>
+          <Icon
+            name="map-marker"
+            size={14}
+            color="rgba(255,255,255,0.9)"
+            style={styles.locationMarker}
+          />
+          <View style={[styles.locationTextWrap, isAddressExpanded && styles.locationTextWrapExpanded]}>
             <Text
               style={[styles.locationText, isAddressExpanded && styles.locationTextExpanded]}
               numberOfLines={isAddressExpanded ? undefined : 1}
             >
-              {addressText}
+              {isAddressExpanded ? addressText : collapsedAddressText}
             </Text>
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.locationToggleBtn,
-              !isAddressLong && styles.locationToggleBtnDisabled,
-            ]}
-            activeOpacity={isAddressLong ? 0.8 : 1}
-            onPress={toggleAddressExpansion}
-            disabled={!isAddressLong}
-          >
-            <AddressDropdownIcon
-              expanded={isAddressExpanded}
+            <TouchableOpacity
+              style={[
+                styles.locationToggleBtn,
+                !isAddressLong && styles.locationToggleBtnDisabled,
+                isAddressExpanded && styles.locationToggleBtnExpanded,
+              ]}
+              activeOpacity={isAddressLong ? 0.8 : 1}
+              onPress={toggleAddressExpansion}
               disabled={!isAddressLong}
-            />
-          </TouchableOpacity>
+            >
+              <AddressDropdownIcon
+                expanded={isAddressExpanded}
+                disabled={!isAddressLong}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Greeting + BIG name + tagline ── */}
@@ -222,7 +253,7 @@ const Home = ({ navigation }) => {
           {/* Small greeting */}
           <Text style={styles.greetText}>Good morning 👋</Text>
           {/* BIG user name — main visual focus */}
-          <Text style={styles.userName}>Kanishka Angira</Text>
+          <Text style={styles.userName}>{displayName}</Text>
           {/* Friendly tagline */}
           <Text style={styles.userTagline}>What needs fixing today?</Text>
         </View>
@@ -368,7 +399,7 @@ const Home = ({ navigation }) => {
           ))}
         </ScrollView>
 
-        <View style={{ height: 24 }} />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
 
     </ScreenWrapper>
@@ -389,6 +420,36 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingHorizontal: 20,
     paddingBottom: 32,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  blob: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  blobDark: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(211,96,45,0.26)',
+  },
+  blobLarge: {
+    width: 380,
+    height: 380,
+    top: -156,
+    right: -110,
+  },
+  blobMedium: {
+    width: 220,
+    height: 220,
+    top: 80,
+    right: 130,
+  },
+  blobAccent: {
+    width: 190,
+    height: 190,
+    top: 108,
+    left: -110,
   },
 
   // Top bar: app pill (left) + bell + avatar (right)
@@ -410,8 +471,13 @@ const styles = StyleSheet.create({
   appNameText: {
     fontSize: 13,
     fontWeight: '800',
-    color: C.white,
     letterSpacing: 0.5,
+  },
+  appNameTrust: {
+    color: C.textPrimary,
+  },
+  appNameFix: {
+    color: C.white,
   },
   topIcons: {
     flexDirection: 'row',
@@ -459,50 +525,52 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
     marginBottom: 22,
   },
   locationRowExpanded: {
     alignItems: 'flex-start',
   },
+  locationMarker: {
+    marginRight: 6,
+    marginTop: 1,
+  },
   locationTextWrap: {
     flex: 1,
     minWidth: 0,
-    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationTextWrapExpanded: {
+    alignItems: 'flex-start',
   },
   locationText: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '600',
-    marginHorizontal: 2,
+    flexShrink: 1,
   },
   locationTextExpanded: {
     lineHeight: 18,
   },
-  locationTextMeasure: {
-    position: 'absolute',
-    left: 2,
-    right: 2,
-    opacity: 0,
-    zIndex: -1,
-    fontSize: 13,
-    fontWeight: '600',
-  },
   locationToggleBtn: {
-    width: 28,
-    height: 22,
+    width: 18,
+    height: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 2,
-    marginTop: 1,
+    marginLeft: 3,
+  },
+  locationToggleBtnExpanded: {
+    marginTop: 2,
+    alignSelf: 'flex-start',
   },
   locationToggleBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.55,
   },
   locationToggleIcon: {
-    width: 20,
+    width: 12,
     height: 12,
     position: 'relative',
+    overflow: 'visible',
   },
   locationToggleIconExpanded: {
     transform: [{ rotate: '180deg' }],
@@ -513,17 +581,17 @@ const styles = StyleSheet.create({
   locationToggleStroke: {
     position: 'absolute',
     top: 4,
-    width: 12,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    width: 7.5,
+    height: 1.6,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
   locationToggleStrokeLeft: {
-    left: 0,
+    left: 0.4,
     transform: [{ rotate: '45deg' }],
   },
   locationToggleStrokeRight: {
-    right: 0,
+    right: 0.4,
     transform: [{ rotate: '-45deg' }],
   },
 
@@ -813,6 +881,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: C.textSecondary,
+  },
+  bottomSpacer: {
+    height: 24,
   },
 
 });
