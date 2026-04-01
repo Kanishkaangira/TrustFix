@@ -43,11 +43,13 @@ const ScreenWrapper = ({
 
   return (
     <View style={[styles.root, { backgroundColor: resolvedTopColor }]}>
-      <StatusBar
-        backgroundColor={resolvedTopColor}
-        barStyle={resolvedStatusBarStyle}
-        translucent={false}
-      />
+      {isFocused ? (
+        <StatusBar
+          backgroundColor={resolvedTopColor}
+          barStyle={resolvedStatusBarStyle}
+          translucent={false}
+        />
+      ) : null}
       <View style={[styles.content, { backgroundColor: resolvedBottomColor }]}>
         {children}
       </View>

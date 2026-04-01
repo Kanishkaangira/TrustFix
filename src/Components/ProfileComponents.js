@@ -143,25 +143,30 @@ export const SubScreenShell = ({
   onBack,
   rightAction,
   accentHeader = false,
+  accentHeaderColor,
   titleNearBack = false,
   titleLarge = false,
   children,
 }) => {
   const colors = useProfileColors();
   const styles = useMemo(() => createShellStyles(colors), [colors]);
+  const resolvedAccentHeaderColor = accentHeaderColor || colors.headerAccent;
 
   return (
     <SafeAreaView
       style={[
         styles.safe,
-        accentHeader && { backgroundColor: colors.headerAccent },
+        accentHeader && { backgroundColor: resolvedAccentHeaderColor },
       ]}
       edges={['top']}
     >
       <View
         style={[
           styles.header,
-          accentHeader && styles.headerAccent,
+          accentHeader && [
+            styles.headerAccent,
+            { backgroundColor: resolvedAccentHeaderColor },
+          ],
           titleNearBack && styles.headerStart,
         ]}
       >

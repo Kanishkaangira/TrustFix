@@ -31,13 +31,14 @@ import { useAppTheme } from '../theme/ThemeProvider';
 //  All colors in one place — change here to retheme the screen
 // ════════════════════════════════════════════════════════════════
 const getHomeColors = (isDark) => ({
+  headerTop: '#FF6B35',
   coral: '#FF6B35',
-  coralDeep: isDark ? '#B33F16' : '#E8531A',
-  coralLight: '#FF9262',
-  coralPale: isDark ? '#35241D' : '#FFF0EB',
-  bgBody: isDark ? '#0F141B' : '#FAF9F6',
+  coralDeep: isDark ? '#7A3215' : '#E8531A',
+  coralLight: isDark ? '#FF875B' : '#FF9262',
+  coralPale: isDark ? '#2B1D18' : '#FFF0EB',
+  bgBody: isDark ? '#0B1118' : '#FAF9F6',
   bgCard: isDark ? '#161D26' : '#FFFFFF',
-  bgInput: isDark ? '#161D26' : '#FFFFFF',
+  bgInput: isDark ? '#1A2230' : '#FFFFFF',
   textPrimary: isDark ? '#F5F7FB' : '#1A1A2E',
   textSecondary: isDark ? '#C2CBD8' : '#6B7280',
   textTertiary: isDark ? '#8F9AAD' : '#9CA3AF',
@@ -53,8 +54,23 @@ const getHomeColors = (isDark) => ({
   roseIcon: '#F43F5E',
   tealBg: isDark ? '#193633' : '#F0FDFA',
   tealIcon: '#14B8A6',
+  badgeSuccessBg: isDark ? '#163427' : '#F0FDF4',
+  badgeInfoBg: isDark ? '#18283C' : '#EFF6FF',
+  badgeWarningBg: isDark ? '#352912' : '#FFFBEB',
+  emergencyStart: isDark ? '#F05F2D' : '#F05B28',
+  emergencyMid: '#FF6B35',
+  emergencyEnd: isDark ? '#FF8357' : '#FF855C',
+  headerFade: isDark ? '#D86A41' : '#FFD5C2',
+  headerTail: isDark ? '#0B1118' : '#FAF9F6',
+  glassFill: isDark ? 'rgba(10,14,20,0.28)' : 'rgba(255,255,255,0.15)',
+  glassFillStrong: isDark ? 'rgba(10,14,20,0.38)' : 'rgba(255,255,255,0.2)',
+  glassBorder: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.2)',
+  glassBorderStrong: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.3)',
+  glowSoft: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)',
+  glowAccent: isDark ? 'rgba(255,122,69,0.16)' : 'rgba(211,96,45,0.26)',
   white: '#FFFFFF',
   border: isDark ? '#273241' : '#F3F4F6',
+  borderStrong: isDark ? '#324152' : '#E5E7EB',
   shadow: '#000000',
   isDark,
 });
@@ -74,10 +90,10 @@ const getServices = (C) => [
 
 // 4 trust badges shown in horizontal scroll strip
 const getBadges = (C) => [
-  { icon: 'shield-check-outline', label: 'Verified Pros',    color: '#22C55E', bg: '#F0FDF4' },
+  { icon: 'shield-check-outline', label: 'Verified Pros',    color: '#22C55E', bg: C.badgeSuccessBg },
   { icon: 'currency-inr',         label: '₹0 Visit Charge',  color: C.coral,   bg: C.coralPale },
-  { icon: 'map-marker-check',     label: 'Live Tracking',    color: '#3B82F6', bg: '#EFF6FF' },
-  { icon: 'star-circle-outline',  label: '4.8★ Rated',       color: '#F59E0B', bg: '#FFFBEB' },
+  { icon: 'map-marker-check',     label: 'Live Tracking',    color: '#3B82F6', bg: C.badgeInfoBg },
+  { icon: 'star-circle-outline',  label: '4.8★ Rated',       color: '#F59E0B', bg: C.badgeWarningBg },
 ];
 
 
@@ -177,13 +193,13 @@ const Home = ({ navigation }) => {
 
   return (
     <ScreenWrapper
-      topColor={C.coralDeep}
+      topColor={C.headerTop}
       bottomColor={C.bgBody}
       statusBarStyle="light-content"
     >
 
         <LinearGradient
-          colors={[C.coralDeep, C.coral, C.coralLight, '#FFD5C2', C.bgBody]}
+          colors={[C.headerTop, C.emergencyMid, C.emergencyEnd, C.headerFade, C.headerTail]}
           locations={[0, 0.25, 0.55, 0.78, 1]}
           style={styles.headerGradient}
         >
@@ -316,7 +332,7 @@ const Home = ({ navigation }) => {
       >
         {/* EMERGENCY BANNER */}
         <LinearGradient
-          colors={[C.coralDeep, C.coral, C.coralLight]}
+          colors={[C.emergencyStart, C.emergencyMid, C.emergencyEnd]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.emergencyBanner}
@@ -432,12 +448,12 @@ const createStyles = (C) => StyleSheet.create({
   blob: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: C.glowSoft,
   },
   blobDark: {
     position: 'absolute',
     borderRadius: 999,
-    backgroundColor: 'rgba(211,96,45,0.26)',
+    backgroundColor: C.glowAccent,
   },
   blobLarge: {
     width: 380,
@@ -467,20 +483,20 @@ const createStyles = (C) => StyleSheet.create({
     paddingTop: 12,
   },
   appNamePill: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     borderRadius: 100,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderWidth: 0,
+    borderColor: 'transparent',
   },
   appNameText: {
-    fontSize: 13,
+    fontSize: 25,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   appNameTrust: {
-    color: C.textPrimary,
+    color: '#111318',
   },
   appNameFix: {
     color: C.white,
@@ -494,9 +510,9 @@ const createStyles = (C) => StyleSheet.create({
   iconBtn: {
     width: 40, height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: C.glassFillStrong,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: C.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -514,9 +530,9 @@ const createStyles = (C) => StyleSheet.create({
   avatarCircle: {
     width: 40, height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.28)',
+    backgroundColor: C.glassFillStrong,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.55)',
+    borderColor: C.glassBorderStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -629,10 +645,10 @@ const createStyles = (C) => StyleSheet.create({
   headerStats: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: C.glassFill,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: C.glassBorder,
     paddingVertical: 14,
     paddingHorizontal: 8,
     marginBottom: 20,
@@ -663,15 +679,17 @@ const createStyles = (C) => StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.white,
+    backgroundColor: C.bgInput,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+    shadowColor: C.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: C.isDark ? 0.08 : 0.1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   searchTapArea: {
     flex: 1,
@@ -688,7 +706,9 @@ const createStyles = (C) => StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: C.coralPale,
+    backgroundColor: C.isDark ? 'rgba(255,107,53,0.18)' : C.coralPale,
+    borderWidth: C.isDark ? 1 : 0,
+    borderColor: C.isDark ? 'rgba(255,255,255,0.06)' : 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 6,
@@ -713,11 +733,13 @@ const createStyles = (C) => StyleSheet.create({
     padding: 24,
     marginBottom: 28,
     overflow: 'hidden',          // clips the decorative emoji
-    shadowColor: C.coral,
+    borderWidth: 1,
+    borderColor: C.isDark ? 'rgba(255,255,255,0.08)' : 'transparent',
+    shadowColor: C.coralLight,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOpacity: C.isDark ? 0.12 : 0.18,
+    shadowRadius: 12,
+    elevation: 2,
   },
   emergencyTag: {
     alignSelf: 'flex-start',
@@ -786,9 +808,11 @@ const createStyles = (C) => StyleSheet.create({
     borderRadius: 16,
     padding: 10,
     alignItems: 'center',
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: C.border,
+    shadowColor: C.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: C.isDark ? 0.18 : 0.06,
     shadowRadius: 8,
     elevation: 3,
   },
@@ -799,7 +823,7 @@ const createStyles = (C) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
   // "More" icon bg — slightly deeper coral tint
-  moreIconWrap: { backgroundColor: 'rgba(255,107,53,0.15)' },
+  moreIconWrap: { backgroundColor: C.isDark ? 'rgba(255,107,53,0.22)' : 'rgba(255,107,53,0.15)' },
   svcName: { fontSize: 12, fontWeight: '700', color: C.textPrimary, textAlign: 'center', marginBottom: 3 },
   svcPrice: { fontSize: 11, color: C.textTertiary, fontWeight: '500' },
 
@@ -816,9 +840,9 @@ const createStyles = (C) => StyleSheet.create({
     justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: C.border,
-    shadowColor: '#000',
+    shadowColor: C.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: C.isDark ? 0.16 : 0.05,
     shadowRadius: 8,
     elevation: 3,
   },

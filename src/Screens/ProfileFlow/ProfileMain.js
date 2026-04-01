@@ -350,17 +350,6 @@ export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
               <Text style={styles.heroEmail} numberOfLines={1}>
                 {profile.email}
               </Text>
-
-              <View style={styles.heroMetaRow}>
-                <View style={[styles.heroMetaChip, styles.heroMetaChipPrimary]}>
-                  <Text style={styles.heroMetaChipText}>{profile.plan}</Text>
-                </View>
-                <View style={styles.heroMetaChip}>
-                  <Text style={styles.heroMetaChipTextMuted}>
-                    Verified member
-                  </Text>
-                </View>
-              </View>
             </View>
           </View>
         </View>
@@ -548,7 +537,7 @@ const createStyles = colors =>
       borderTopRightRadius: 32,
     },
     scrollContent: {
-      paddingTop: 14,
+      paddingTop: 42,
     },
     hero: {
       backgroundColor: colors.headerAccent,
@@ -705,35 +694,6 @@ const createStyles = colors =>
       fontSize: 12,
       color: 'rgba(255,255,255,0.64)',
       marginTop: 4,
-    },
-    heroMetaRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginTop: 12,
-    },
-    heroMetaChip: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      backgroundColor: colors.isDark
-        ? 'rgba(255,255,255,0.06)'
-        : 'rgba(255,255,255,0.16)',
-    },
-    heroMetaChipPrimary: {
-      backgroundColor: colors.isDark
-        ? 'rgba(255,122,69,0.18)'
-        : 'rgba(17,19,24,0.12)',
-    },
-    heroMetaChipText: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: colors.white,
-    },
-    heroMetaChipTextMuted: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: 'rgba(255,255,255,0.78)',
     },
     statsStrip: {
       flexDirection: 'row',
