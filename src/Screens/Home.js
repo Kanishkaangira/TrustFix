@@ -4,8 +4,9 @@
 //  Matches the app screenshot UI exactly
 // ════════════════════════════════════════════════════════════════
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -72,6 +73,8 @@ const getHomeColors = (isDark) => ({
   glassBorderStrong: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.3)',
   glowSoft: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)',
   glowAccent: isDark ? 'rgba(255,122,69,0.16)' : 'rgba(211,96,45,0.26)',
+  aiCardBg: isDark ? 'rgba(255,134,92,0.14)' : 'rgba(255,145,96,0.22)',
+  aiCardBorder: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.12)',
   white: '#FFFFFF',
   border: isDark ? '#273241' : '#F3F4F6',
   borderStrong: isDark ? '#324152' : '#E5E7EB',
@@ -151,6 +154,42 @@ const AddressDropdownIcon = ({ expanded = false, disabled = false, styles }) => 
     <View style={[styles.locationToggleStroke, styles.locationToggleStrokeRight]} />
   </View>
 );
+
+function FloatingAiOrb({ children, duration = 2600, delay = 120 }) {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: duration / 2,
+          useNativeDriver: true,
+        }),
+        Animated.timing(anim, {
+          toValue: 0,
+          duration: duration / 2,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [anim, delay, duration]);
+
+  const translateY = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -10],
+  });
+
+  return (
+    <Animated.View style={{ transform: [{ translateY }] }}>
+      {children}
+    </Animated.View>
+  );
+}
 
 const Home = ({ navigation }) => {
   const { isDark } = useAppTheme();
@@ -304,10 +343,36 @@ const Home = ({ navigation }) => {
         <View style={styles.greetBlock}>
           {/* Small greeting */}
           <Text style={styles.greetText}>Good morning 👋</Text>
-          {/* BIG user name — main visual focus */}
-          <Text style={styles.userName}>{displayName}</Text>
-          {/* Friendly tagline */}
-          <Text style={styles.userTagline}>What needs fixing today?</Text>
+          <View style={styles.nameRow}>
+            <View style={styles.nameContent}>
+              {/* BIG user name — main visual focus */}
+              <Text style={styles.userName} numberOfLines={2}>
+                {displayName}
+              </Text>
+              <Text style={styles.userTagline}>What needs fixing today?</Text>
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={styles.aiQuickBtn}
+              onPress={openAiChat}
+            >
+              <FloatingAiOrb duration={2800} delay={120}>
+                <View style={styles.aiQuickOrb}>
+                  <View style={styles.aiQuickRingOuter} />
+                  <View style={styles.aiQuickRingMid} />
+                  <View style={styles.aiQuickCore}>
+                    <Icon
+                      name="robot-excited-outline"
+                      size={18}
+                      color={C.coral}
+                    />
+                  </View>
+                </View>
+              </FloatingAiOrb>
+              <Text style={styles.aiQuickBtnTitle}>AI Assist</Text>
+              <Text style={styles.aiQuickBtnText}>Quick Diagnosis</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Mini stats strip ── */}
@@ -377,58 +442,6 @@ const Home = ({ navigation }) => {
           </TouchableOpacity>
           <Text style={styles.emergencyEmoji}>🔧</Text>
         </LinearGradient>
-
-        <View style={styles.aiSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>AI Diagnosis</Text>
-            <TouchableOpacity onPress={openAiChat}>
-              <Text style={styles.seeAll}>Open chat →</Text>
-            </TouchableOpacity>
-          </View>
-
-          <LinearGradient
-            colors={[C.bgCard, C.isDark ? '#1A2230' : '#FFF4ED']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.aiFeatureCard}
-          >
-            <View style={styles.aiFeatureTop}>
-              <View style={styles.aiFeatureIconWrap}>
-                <Icon name="robot-excited-outline" size={26} color={C.coral} />
-              </View>
-              <View style={styles.aiFeatureTextWrap}>
-                <Text style={styles.aiFeatureTitle}>Show the issue. Get a diagnosis.</Text>
-                <Text style={styles.aiFeatureSubtitle}>
-                  Upload a photo, video or voice note and let TrustFix AI guide the next step.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.aiFeaturePills}>
-              <View style={styles.aiFeaturePill}>
-                <Icon name="image-outline" size={14} color={C.violetIcon} />
-                <Text style={styles.aiFeaturePillText}>Photo scan</Text>
-              </View>
-              <View style={styles.aiFeaturePill}>
-                <Icon name="microphone-outline" size={14} color={C.greenIcon} />
-                <Text style={styles.aiFeaturePillText}>Voice explain</Text>
-              </View>
-              <View style={styles.aiFeaturePill}>
-                <Icon name="clock-fast" size={14} color={C.amberIcon} />
-                <Text style={styles.aiFeaturePillText}>Fast estimate</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              activeOpacity={0.86}
-              style={styles.aiFeatureBtn}
-              onPress={openAiChat}
-            >
-              <Text style={styles.aiFeatureBtnText}>Start AI Diagnosis</Text>
-              <Icon name="arrow-right" size={18} color={C.white} />
-            </TouchableOpacity>
-          </LinearGradient>
-        </View>
 
         {/* SERVICES GRID */}
         <View style={styles.servicesSection}>
@@ -709,6 +722,17 @@ const createStyles = (C) => StyleSheet.create({
     fontWeight: '600',
     marginBottom: 6,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  nameContent: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 2,
+  },
   userName: {
     fontSize: 36,                 // BIG — main visual focus of header
     fontWeight: '800',
@@ -716,6 +740,65 @@ const createStyles = (C) => StyleSheet.create({
     letterSpacing: -1,
     lineHeight: 42,
     marginBottom: 6,
+  },
+  aiQuickBtn: {
+    width: 104,
+    alignSelf: 'flex-start',
+    marginTop: -26,
+    alignItems: 'center',
+    shadowColor: C.shadow,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: C.isDark ? 0.18 : 0.12,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  aiQuickOrb: {
+    width: 70,
+    height: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  aiQuickRingOuter: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.82)',
+  },
+  aiQuickRingMid: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.62)',
+  },
+  aiQuickCore: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiQuickBtnTitle: {
+    marginTop: 10,
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.white,
+    letterSpacing: -0.2,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  aiQuickBtnText: {
+    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.88)',
+    lineHeight: 14,
+    textAlign: 'center',
   },
   userTagline: {
     fontSize: 15,
