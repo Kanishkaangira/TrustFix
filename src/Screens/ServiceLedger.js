@@ -1,18 +1,26 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  RefreshControl,
+  Alert,
+  Modal,
+  Pressable,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../Components/ScreenWrapper';
+import { supabase } from '../lib/supabase';
 import {
+  cancelBooking,
   getBookings,
   subscribeToBookings,
+  syncBookingsFromRemote,
 } from '../state/bookingStore';
 import { useAppTheme } from '../theme/ThemeProvider';
 
@@ -23,6 +31,20 @@ const ACTIVE_STATUSES = new Set([
   'en_route',
   'in_progress',
 ]);
+
+const HISTORY_COLUMNS = [
+  'id',
+  'booking_id',
+  'booking_number',
+  'service_name_snapshot',
+  'problem_name_snapshot',
+  'severity',
+  'scheduled_date',
+  'scheduled_slot_label',
+  'estimated_total',
+  'status',
+  'created_at',
+].join(',');
 
 const STATUS_META = {
   requested: {
@@ -75,11 +97,38 @@ const STATUS_META = {
   },
 };
 
+const SEVERITY_META = {
+  minor: {
+    label: 'Minor',
+    bg: 'rgba(59,130,246,0.12)',
+    text: '#2563EB',
+    icon: 'circle-slice-3',
+  },
+  moderate: {
+    label: 'Moderate',
+    bg: 'rgba(249,115,22,0.12)',
+    text: '#EA580C',
+    icon: 'circle-slice-5',
+  },
+  urgent: {
+    label: 'Urgent',
+    bg: 'rgba(239,68,68,0.12)',
+    text: '#DC2626',
+    icon: 'alert-circle',
+  },
+  default: {
+    label: 'General',
+    bg: 'rgba(148,163,184,0.12)',
+    text: '#475569',
+    icon: 'shape-outline',
+  },
+};
+
 const getLedgerColors = (isDark) => ({
   isDark,
   headerStart: '#FF6B35',
-  headerMid: '#FF8A4C',
-  headerEnd: isDark ? '#1A2430' : '#FFF1E8',
+  headerMid: '#FF7A42',
+  headerEnd: '#FF844E',
   surface: isDark ? '#151D27' : '#FFFFFF',
   surfaceAlt: isDark ? '#101720' : '#FFF8F3',
   background: isDark ? '#0B1118' : '#FAF8F5',
@@ -100,6 +149,7 @@ const formatCurrency = (value) => (
 
 const formatHeroStat = (value) => {
   const amount = Number(value || 0);
+
   if (amount >= 1000) {
     return `\u20B9${(amount / 1000).toFixed(amount >= 10000 ? 0 : 1)}k`;
   }
@@ -123,37 +173,35 @@ const sortByRecent = (items = []) => [...items].sort((a, b) => {
   return (bDate?.getTime() || 0) - (aDate?.getTime() || 0);
 });
 
-const formatTimelineDate = (booking) => {
-  const date = safeDate(booking.scheduledDate) || safeDate(booking.createdAt);
+const sortHistoryByRecent = (items = []) => [...items].sort((a, b) => {
+  const aDate = safeDate(a.scheduledDate) || safeDate(a.createdAt);
+  const bDate = safeDate(b.scheduledDate) || safeDate(b.createdAt);
+
+  return (bDate?.getTime() || 0) - (aDate?.getTime() || 0);
+});
+
+const formatHistoryDate = (record) => {
+  const date = safeDate(record.scheduledDate) || safeDate(record.createdAt);
 
   if (!date) {
-    return 'Date pending';
+    return 'DATE PENDING';
   }
 
   return date.toLocaleDateString('en-IN', {
-    month: 'short',
+    month: 'long',
     day: 'numeric',
     year: 'numeric',
   }).toUpperCase();
 };
 
-const formatCurrentDate = (booking) => {
-  const date = safeDate(booking.scheduledDate) || safeDate(booking.createdAt);
-
-  if (!date) {
-    return 'We are assigning the best available technician.';
-  }
-
-  return date.toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
-};
-
 const getStatusMeta = (status) => {
   const key = String(status || '').trim();
   return STATUS_META[key] || STATUS_META.default;
+};
+
+const getSeverityMeta = (severity) => {
+  const key = String(severity || '').trim();
+  return SEVERITY_META[key] || SEVERITY_META.default;
 };
 
 const getServiceIcon = (serviceName = '') => {
@@ -181,65 +229,71 @@ const getServiceIcon = (serviceName = '') => {
   return 'clipboard-text-outline';
 };
 
+const normalizeHistoryRecord = (record = {}) => ({
+  id: String(record.id || '').trim(),
+  bookingId: String(record.booking_id || '').trim(),
+  bookingNumber: String(record.booking_number || '').trim(),
+  serviceName: String(record.service_name_snapshot || '').trim(),
+  problemName: String(
+    record.problem_name_snapshot || 'General service'
+  ).trim(),
+  severity: String(record.severity || '').trim(),
+  scheduledDate: record.scheduled_date || null,
+  scheduledSlotLabel: String(record.scheduled_slot_label || '').trim(),
+  estimatedTotal: Number(record.estimated_total || 0),
+  estimatedTotalLabel: formatCurrency(record.estimated_total || 0),
+  status: String(record.status || '').trim(),
+  createdAt: record.created_at || null,
+});
+
+const normalizeHistoryRecords = (records = []) => (
+  Array.isArray(records)
+    ? records
+      .filter(Boolean)
+      .map(normalizeHistoryRecord)
+      .filter((record) => record.id && record.bookingId)
+    : []
+);
+
+const getLatestHistoryRecords = (records = []) => {
+  const seen = new Set();
+
+  return sortHistoryByRecent(records).filter((record) => {
+    if (!record.bookingId || seen.has(record.bookingId)) {
+      return false;
+    }
+
+    seen.add(record.bookingId);
+    return true;
+  });
+};
+
+const fetchBookingHistoryRecords = async () => {
+  try {
+    return await supabase.db.select('booking_status_history', {
+      columns: HISTORY_COLUMNS,
+      order: [{ column: 'created_at', ascending: false }],
+    });
+  } catch (_) {
+    return {
+      data: [],
+      error: { message: 'Could not load booking history right now.' },
+    };
+  }
+};
+
 const StatusChip = ({ meta, styles }) => (
-  <View style={[styles.statusChip, { backgroundColor: meta.bg }]}>
+  <View style={[styles.statusChip, { borderColor: meta.dot }]}>
     <View style={[styles.statusDot, { backgroundColor: meta.dot }]} />
     <Text style={[styles.statusText, { color: meta.text }]}>{meta.label}</Text>
   </View>
 );
 
-const CurrentBookingCard = ({ booking, styles, colors }) => {
-  const statusMeta = getStatusMeta(booking.status);
-
-  return (
-    <View style={styles.currentCard}>
-      <View style={styles.currentCardTop}>
-        <View style={styles.currentIconWrap}>
-          <Icon
-            name={getServiceIcon(booking.serviceName)}
-            size={22}
-            color={colors.primary}
-          />
-        </View>
-        <View style={styles.currentContent}>
-          <View style={styles.currentTitleRow}>
-            <Text style={styles.currentTitle} numberOfLines={1}>
-              {booking.serviceName}
-            </Text>
-            <StatusChip meta={statusMeta} styles={styles} />
-          </View>
-          <Text style={styles.currentProblem} numberOfLines={2}>
-            {booking.problemName}
-          </Text>
-          <Text style={styles.currentMeta}>
-            {formatCurrentDate(booking)}
-            {booking.scheduledSlotLabel ? ` • ${booking.scheduledSlotLabel}` : ''}
-          </Text>
-          <Text style={styles.currentAddress} numberOfLines={2}>
-            {booking.addressLabel
-              ? `${booking.addressLabel} • ${booking.address}`
-              : booking.address || 'Address will be shared soon'}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.currentFooter}>
-        <View>
-          <Text style={styles.footerLabel}>Booking ID</Text>
-          <Text style={styles.footerValue}>{booking.bookingNumber || 'Pending'}</Text>
-        </View>
-        <View style={styles.footerDivider} />
-        <View>
-          <Text style={styles.footerLabel}>Estimate</Text>
-          <Text style={styles.footerValue}>{booking.estimatedTotalLabel}</Text>
-        </View>
-      </View>
-    </View>
-  );
-};
-
-const HistoryCard = ({ booking, isLast, styles }) => {
-  const statusMeta = getStatusMeta(booking.status);
+const HistoryCard = ({ record, isLast, styles, onCancelPress, isCancelling }) => {
+  const statusMeta = getStatusMeta(record.status);
+  const canCancel = record.status === 'requested';
+  const isArchived =
+    record.status === 'completed' || record.status === 'cancelled';
 
   return (
     <View style={styles.timelineRow}>
@@ -248,50 +302,89 @@ const HistoryCard = ({ booking, isLast, styles }) => {
           style={[
             styles.timelineDot,
             { backgroundColor: statusMeta.dot },
+            isArchived && styles.archivedTimelineDot,
           ]}
         />
         {!isLast ? <View style={styles.timelineLine} /> : null}
       </View>
 
-      <View style={styles.historyCard}>
-        <Text style={styles.historyDate}>{formatTimelineDate(booking)}</Text>
+      <View style={[styles.historyCard, isArchived && styles.archivedHistoryCard]}>
+        <View style={isArchived ? styles.archivedContent : null}>
+        <Text style={styles.historyDate}>{formatHistoryDate(record)}</Text>
+
         <View style={styles.historyTitleRow}>
-          <View style={styles.historyIconWrap}>
+          <View
+            style={[
+              styles.historyIconWrap,
+              isArchived && styles.archivedHistoryIconWrap,
+            ]}
+          >
             <Icon
-              name={getServiceIcon(booking.serviceName)}
+              name={getServiceIcon(record.serviceName)}
               size={18}
               color={statusMeta.dot}
             />
           </View>
           <View style={styles.historyTitleText}>
             <Text style={styles.historyTitle} numberOfLines={1}>
-              {booking.serviceName}
+              {record.serviceName}
             </Text>
             <Text style={styles.historyProblem} numberOfLines={1}>
-              {booking.problemName}
+              {record.problemName}
             </Text>
           </View>
-          <Text style={styles.historyAmount}>{booking.estimatedTotalLabel}</Text>
+          <Text style={styles.historyAmount}>{record.estimatedTotalLabel}</Text>
         </View>
 
         <View style={styles.historyMetaRow}>
           <Text style={styles.historyMeta} numberOfLines={1}>
-            {booking.bookingNumber || 'Booking pending'}
+            {record.bookingNumber || 'Booking pending'}
           </Text>
           <Text style={styles.historyMeta} numberOfLines={1}>
-            {booking.addressLabel || 'Service address'}
+            {getSeverityMeta(record.severity).label}
           </Text>
         </View>
 
         <View style={styles.historyChipRow}>
           <StatusChip meta={statusMeta} styles={styles} />
-          {booking.scheduledSlotLabel ? (
+          {record.scheduledSlotLabel ? (
             <View style={styles.slotChip}>
-              <Icon name="clock-time-four-outline" size={12} color="#64748B" />
-              <Text style={styles.slotChipText}>{booking.scheduledSlotLabel}</Text>
+              <Icon
+                name="clock-time-four-outline"
+                size={12}
+                color="#64748B"
+              />
+              <Text style={styles.slotChipText}>
+                {record.scheduledSlotLabel}
+              </Text>
             </View>
           ) : null}
         </View>
+        </View>
+
+        {canCancel ? (
+          <View style={styles.cancelInlineRow}>
+            <View style={styles.cancelInlineHint}>
+              <Icon
+                name="calendar-refresh-outline"
+                size={14}
+                color="#94A3B8"
+              />
+              <Text style={styles.cancelInlineHintText}>Need to cancel?</Text>
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.72}
+              style={styles.cancelInlineAction}
+              onPress={() => onCancelPress(record)}
+              disabled={isCancelling}
+            >
+              <Text style={styles.cancelInlineActionText}>
+                {isCancelling ? 'Cancelling...' : 'Cancel booking'}
+              </Text>
+              <Icon name="chevron-right" size={15} color="#DC2626" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -321,18 +414,77 @@ const ServiceLedger = ({ navigation }) => {
   const colors = useMemo(() => getLedgerColors(isDark), [isDark]);
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [bookings, setBookings] = useState(() => getBookings());
+  const [historyRecords, setHistoryRecords] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [cancelingBookingId, setCancelingBookingId] = useState('');
+  const [pendingCancelRecord, setPendingCancelRecord] = useState(null);
+  const [syncError, setSyncError] = useState('');
 
   useEffect(() => subscribeToBookings(setBookings), []);
+
+  const refreshLedger = useCallback(async (showLoader = false) => {
+    if (showLoader) {
+      setIsRefreshing(true);
+    }
+
+    try {
+      const [bookingsResult, historyResult] = await Promise.all([
+        syncBookingsFromRemote(),
+        fetchBookingHistoryRecords(),
+      ]);
+
+      if (historyResult?.error) {
+        setSyncError(
+          historyResult.error.message || 'Could not refresh your booking history.',
+        );
+      } else {
+        setHistoryRecords(
+          normalizeHistoryRecords(
+            Array.isArray(historyResult?.data) ? historyResult.data : [],
+          ),
+        );
+      }
+
+      if (bookingsResult?.error) {
+        setSyncError(
+          bookingsResult.error.message || 'Could not refresh your bookings.',
+        );
+      } else if (!historyResult?.error) {
+        setSyncError('');
+      }
+    } finally {
+      if (showLoader) {
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshLedger(false);
+    }, [refreshLedger]),
+  );
 
   const sortedBookings = useMemo(() => sortByRecent(bookings), [bookings]);
   const activeBookings = useMemo(
     () => sortedBookings.filter((booking) => ACTIVE_STATUSES.has(booking.status)),
     [sortedBookings],
   );
-  const pastBookings = useMemo(
-    () => sortedBookings.filter((booking) => !ACTIVE_STATUSES.has(booking.status)),
-    [sortedBookings],
+  const latestHistoryRecords = useMemo(
+    () => getLatestHistoryRecords(historyRecords),
+    [historyRecords],
   );
+  const activeHistoryRecords = useMemo(
+    () => latestHistoryRecords.filter((record) => ACTIVE_STATUSES.has(record.status)),
+    [latestHistoryRecords],
+  );
+  const archivedHistoryRecords = useMemo(
+    () => latestHistoryRecords.filter((record) => (
+      record.status === 'completed' || record.status === 'cancelled'
+    )),
+    [latestHistoryRecords],
+  );
+  const visibleHistoryRecords = latestHistoryRecords;
 
   const totalSpent = sortedBookings.reduce((sum, booking) => (
     booking.status === 'cancelled'
@@ -341,14 +493,62 @@ const ServiceLedger = ({ navigation }) => {
   ), 0);
 
   const stats = [
-    { label: 'Total Spent', value: formatHeroStat(totalSpent), accent: '#F97316' },
-    { label: 'Active Jobs', value: String(activeBookings.length), accent: '#10B981' },
+    {
+      label: 'Total Spent',
+      value: formatHeroStat(totalSpent),
+      accent: '#F97316',
+    },
+    {
+      label: 'Active Jobs',
+      value: String(activeBookings.length),
+      accent: '#10B981',
+    },
     {
       label: 'Jobs Done',
-      value: String(sortedBookings.filter((booking) => booking.status === 'completed').length),
+      value: String(
+        visibleHistoryRecords.filter((record) => record.status === 'completed')
+          .length,
+      ),
       accent: '#8B5CF6',
     },
   ];
+
+  const closeCancelModal = useCallback(() => {
+    if (cancelingBookingId) {
+      return;
+    }
+
+    setPendingCancelRecord(null);
+  }, [cancelingBookingId]);
+
+  const handleCancelBooking = useCallback((record) => {
+    setPendingCancelRecord(record);
+  }, []);
+
+  const confirmCancelBooking = useCallback(async () => {
+    if (!pendingCancelRecord?.bookingId) {
+      return;
+    }
+
+    setCancelingBookingId(pendingCancelRecord.bookingId);
+
+    try {
+      const result = await cancelBooking(pendingCancelRecord.bookingId);
+
+      if (result?.error) {
+        Alert.alert(
+          'Unable to cancel',
+          result.error.message || 'Please try again.',
+        );
+        return;
+      }
+
+      setPendingCancelRecord(null);
+      await refreshLedger(false);
+    } finally {
+      setCancelingBookingId('');
+    }
+  }, [pendingCancelRecord, refreshLedger]);
 
   return (
     <ScreenWrapper
@@ -365,9 +565,9 @@ const ServiceLedger = ({ navigation }) => {
         <View style={styles.headerBlobLarge} />
         <View style={styles.headerBlobSmall} />
 
-        <Text style={styles.headerTitle}>Service Ledger</Text>
+        <Text style={styles.headerTitle}>Home Ledger</Text>
         <Text style={styles.headerSubtitle}>
-          Current service, repair history and every job you booked with TrustFix.
+          Track active bookings and your full repair history with TrustFix.
         </Text>
       </LinearGradient>
 
@@ -375,6 +575,14 @@ const ServiceLedger = ({ navigation }) => {
         style={styles.body}
         contentContainerStyle={styles.bodyContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={(
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => refreshLedger(true)}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        )}
       >
         <View style={styles.statsRow}>
           {stats.map((stat) => (
@@ -387,12 +595,12 @@ const ServiceLedger = ({ navigation }) => {
           ))}
         </View>
 
-        {sortedBookings.length === 0 ? (
+        {sortedBookings.length === 0 && !visibleHistoryRecords.length ? (
           <EmptyLedger navigation={navigation} styles={styles} colors={colors} />
         ) : (
           <>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Current Service</Text>
+              <Text style={styles.sectionTitle}>Service Records</Text>
               <TouchableOpacity
                 activeOpacity={0.82}
                 onPress={() => navigation.navigate('Booking')}
@@ -401,60 +609,119 @@ const ServiceLedger = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
-            {activeBookings.length ? (
-              <View style={styles.currentSection}>
-                {activeBookings.map((booking) => (
-                  <CurrentBookingCard
-                    key={booking.id}
-                    booking={booking}
-                    styles={styles}
-                    colors={colors}
-                  />
-                ))}
-              </View>
-            ) : (
-              <View style={styles.noActiveCard}>
-                <View style={styles.noActiveIconWrap}>
-                  <Icon name="calendar-check-outline" size={22} color={colors.primary} />
-                </View>
-                <View style={styles.noActiveText}>
-                  <Text style={styles.noActiveTitle}>No active service right now</Text>
-                  <Text style={styles.noActiveSubtitle}>
-                    Your next live booking will appear here with status updates.
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Booking History</Text>
+            <View style={styles.subSectionMetaWrap}>
               <Text style={styles.sectionMeta}>
-                {pastBookings.length} record{pastBookings.length === 1 ? '' : 's'}
+                {visibleHistoryRecords.length} record
+                {visibleHistoryRecords.length === 1 ? '' : 's'}
               </Text>
             </View>
 
-            {pastBookings.length ? (
+            {syncError ? (
+              <View style={styles.syncErrorCard}>
+                <Icon name="wifi-alert" size={16} color="#F97316" />
+                <Text style={styles.syncErrorText}>{syncError}</Text>
+              </View>
+            ) : null}
+
+            {visibleHistoryRecords.length ? (
               <View style={styles.timelineWrap}>
-                {pastBookings.map((booking, index) => (
-                  <HistoryCard
-                    key={booking.id}
-                    booking={booking}
-                    isLast={index === pastBookings.length - 1}
-                    styles={styles}
-                  />
-                ))}
+                {activeHistoryRecords.length ? (
+                  <View style={styles.recordGroup}>
+                    <Text style={styles.groupHeading}>Requested & Active</Text>
+                    {activeHistoryRecords.map((record, index) => (
+                      <HistoryCard
+                        key={record.id}
+                        record={record}
+                        isLast={index === activeHistoryRecords.length - 1}
+                        styles={styles}
+                        onCancelPress={handleCancelBooking}
+                        isCancelling={cancelingBookingId === record.bookingId}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+
+                {archivedHistoryRecords.length ? (
+                  <View style={styles.recordGroup}>
+                    <Text style={styles.groupHeading}>Completed & Cancelled</Text>
+                    {archivedHistoryRecords.map((record, index) => (
+                      <HistoryCard
+                        key={record.id}
+                        record={record}
+                        isLast={index === archivedHistoryRecords.length - 1}
+                        styles={styles}
+                        onCancelPress={handleCancelBooking}
+                        isCancelling={cancelingBookingId === record.bookingId}
+                      />
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ) : (
               <View style={styles.historyEmpty}>
-                <Text style={styles.historyEmptyTitle}>No past bookings yet</Text>
+                <Text style={styles.historyEmptyTitle}>No history records yet</Text>
                 <Text style={styles.historyEmptySubtitle}>
-                  Completed and cancelled jobs will show here once you start booking services.
+                  As soon as your booking status is created or updated, the service
+                  record will show here.
                 </Text>
               </View>
             )}
           </>
         )}
       </ScrollView>
+
+      <Modal
+        transparent
+        visible={!!pendingCancelRecord}
+        animationType="fade"
+        onRequestClose={closeCancelModal}
+      >
+        <View style={styles.confirmOverlay}>
+          <Pressable style={styles.confirmBackdrop} onPress={closeCancelModal} />
+          <View style={styles.confirmDialog}>
+            <LinearGradient
+              colors={['#FFF7F2', '#FFFFFF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.confirmAccent}
+            >
+              <View style={styles.confirmHeaderRow}>
+                <View style={styles.confirmIconWrap}>
+                  <Icon name="close-circle-outline" size={24} color="#DC2626" />
+                </View>
+                <View style={styles.confirmHeaderTextWrap}>
+                  <Text style={styles.confirmTitle}>Cancel Booking?</Text>
+                  <Text style={styles.confirmServiceName} numberOfLines={1}>
+                    {pendingCancelRecord?.serviceName || 'Service request'}
+                  </Text>
+                </View>
+              </View>
+            </LinearGradient>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={styles.confirmKeepBtn}
+                onPress={closeCancelModal}
+                disabled={!!cancelingBookingId}
+              >
+                <Text style={styles.confirmKeepText}>Keep Booking</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={styles.confirmCancelBtn}
+                onPress={confirmCancelBooking}
+                disabled={!!cancelingBookingId}
+              >
+                <Text style={styles.confirmCancelText}>
+                  {cancelingBookingId ? 'Cancelling...' : 'Cancel Booking'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
   );
 };
@@ -476,7 +743,7 @@ const createStyles = (colors) => StyleSheet.create({
     borderRadius: 999,
     top: -92,
     right: -78,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,170,130,0.14)',
   },
   headerBlobSmall: {
     position: 'absolute',
@@ -485,7 +752,7 @@ const createStyles = (colors) => StyleSheet.create({
     borderRadius: 999,
     top: 20,
     left: -70,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,150,110,0.10)',
   },
   headerTitle: {
     fontSize: 31,
@@ -568,133 +835,45 @@ const createStyles = (colors) => StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
   },
-  currentSection: {
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  currentCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 22,
+  syncErrorCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 16,
-    shadowColor: colors.statShadow,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: colors.isDark ? 0.22 : 0.06,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  currentCardTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  currentIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primarySoft,
-    marginRight: 12,
-  },
-  currentContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-  currentTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 8,
   },
-  currentTitle: {
+  syncErrorText: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  currentProblem: {
-    marginTop: 6,
-    fontSize: 14,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
     fontWeight: '600',
-    color: colors.textSecondary,
-    lineHeight: 20,
   },
-  currentMeta: {
-    marginTop: 10,
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textTertiary,
-  },
-  currentAddress: {
-    marginTop: 6,
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  currentFooter: {
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  footerLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    color: colors.textTertiary,
-  },
-  footerValue: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  footerDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: colors.line,
-    marginHorizontal: 18,
-  },
-  noActiveCard: {
-    marginHorizontal: 16,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  noActiveIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primarySoft,
-    marginRight: 12,
-  },
-  noActiveText: {
-    flex: 1,
-  },
-  noActiveTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  noActiveSubtitle: {
-    marginTop: 4,
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textSecondary,
+  subSectionMetaWrap: {
+    marginTop: -4,
+    marginBottom: 12,
+    paddingHorizontal: 18,
   },
   timelineWrap: {
     paddingHorizontal: 16,
+  },
+  recordGroup: {
+    marginBottom: 10,
+  },
+  groupHeading: {
+    marginLeft: 32,
+    marginBottom: 10,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.textTertiary,
   },
   timelineRow: {
     flexDirection: 'row',
@@ -709,6 +888,9 @@ const createStyles = (colors) => StyleSheet.create({
     height: 12,
     borderRadius: 6,
     marginTop: 18,
+  },
+  archivedTimelineDot: {
+    opacity: 0.45,
   },
   timelineLine: {
     flex: 1,
@@ -731,6 +913,13 @@ const createStyles = (colors) => StyleSheet.create({
     shadowRadius: 14,
     elevation: 3,
   },
+  archivedHistoryCard: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.line,
+  },
+  archivedContent: {
+    opacity: 0.6,
+  },
   historyDate: {
     fontSize: 10,
     fontWeight: '800',
@@ -751,6 +940,9 @@ const createStyles = (colors) => StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfaceAlt,
     marginRight: 10,
+  },
+  archivedHistoryIconWrap: {
+    backgroundColor: 'rgba(148,163,184,0.12)',
   },
   historyTitleText: {
     flex: 1,
@@ -801,6 +993,8 @@ const createStyles = (colors) => StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 999,
     gap: 6,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   statusDot: {
     width: 7,
@@ -818,14 +1012,44 @@ const createStyles = (colors) => StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: 'transparent',
   },
   slotChipText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#64748B',
+  },
+  cancelInlineRow: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cancelInlineHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cancelInlineHintText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textTertiary,
+  },
+  cancelInlineAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  cancelInlineActionText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#DC2626',
   },
   historyEmpty: {
     marginHorizontal: 16,
@@ -890,5 +1114,100 @@ const createStyles = (colors) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: colors.white,
+  },
+  confirmOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    backgroundColor: 'rgba(15,23,42,0.18)',
+  },
+  confirmBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  confirmDialog: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.statShadow,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: colors.isDark ? 0.28 : 0.12,
+    shadowRadius: 24,
+    elevation: 14,
+  },
+  confirmAccent: {
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 18,
+  },
+  confirmHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  confirmIconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(239,68,68,0.10)',
+    marginRight: 14,
+  },
+  confirmHeaderTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  confirmTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  confirmServiceName: {
+    marginTop: 4,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  confirmActions: {
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 18,
+    gap: 10,
+  },
+  confirmKeepBtn: {
+    minHeight: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  confirmKeepText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  confirmCancelBtn: {
+    minHeight: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+  },
+  confirmCancelText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

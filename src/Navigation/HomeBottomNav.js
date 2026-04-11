@@ -27,17 +27,17 @@ const TABS = [
     icon: 'home-variant-outline',
     activeIcon: 'home-variant',
   },
+   {
+    name: 'Booking',
+    label: 'Booking',
+    icon: 'calendar-outline',
+    activeIcon: 'calendar-check',
+  },
   {
     name: 'History',
     label: 'History',
     icon: 'timeline-text-outline',
     activeIcon: 'timeline-text',
-  },
-  {
-    name: 'Booking',
-    label: 'Booking',
-    icon: 'calendar-outline',
-    activeIcon: 'calendar-check',
   },
   {
     name: 'Profile',
@@ -196,8 +196,8 @@ const HomeBottomNav = () => (
     }}
   >
     <Tab.Screen name="Home" component={Home} />
-    <Tab.Screen name="History" component={ServiceLedger} />
     <Tab.Screen name="Booking" component={Booking} />
+    <Tab.Screen name="History" component={ServiceLedger} />
     <Tab.Screen name="Profile" component={Profile} />
   </Tab.Navigator>
 );

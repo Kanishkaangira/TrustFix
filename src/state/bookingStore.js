@@ -227,6 +227,56 @@ export const createBooking = async ({
   }
 };
 
+export const cancelBooking = async (bookingId) => {
+  try {
+    const trimmedBookingId = String(bookingId || '').trim();
+
+    if (!trimmedBookingId) {
+      return { data: null, error: { message: 'Booking not found.' } };
+    }
+
+    const { user, error: userError } = await getAuthenticatedUser();
+
+    if (userError) {
+      return { data: null, error: userError };
+    }
+
+    if (!user) {
+      return { data: null, error: { message: 'Not authenticated.' } };
+    }
+
+    const result = await supabase.db.update(
+      'bookings',
+      { status: 'cancelled' },
+      {
+        filters: [
+          { column: 'id', op: 'eq', value: trimmedBookingId },
+          { column: 'user_id', op: 'eq', value: user.id },
+        ],
+        single: true,
+      },
+    );
+
+    if (result.error) {
+      return { data: null, error: result.error };
+    }
+
+    const nextBooking = normalizeBookingRecord(result.data);
+    applyBookings(
+      bookings.map((booking) => (
+        booking.id === nextBooking.id ? nextBooking : booking
+      )),
+    );
+
+    return { data: nextBooking, error: null };
+  } catch (_) {
+    return {
+      data: null,
+      error: { message: 'Please check your internet connection.' },
+    };
+  }
+};
+
 export const resetBookingStore = async () => {
   bookings = INITIAL_BOOKINGS;
   notify();

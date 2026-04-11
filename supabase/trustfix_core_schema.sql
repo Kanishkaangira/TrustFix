@@ -197,8 +197,17 @@ alter table public.bookings
 create table if not exists public.booking_status_history (
   id uuid primary key default gen_random_uuid(),
   booking_id uuid not null references public.bookings(id) on delete cascade,
+  booking_number text not null,
+  service_name_snapshot text not null,
+  problem_name_snapshot text,
+  severity text not null,
+  scheduled_date date,
+  scheduled_slot_label text,
+  estimated_total numeric(10, 2) not null default 0,
   status text not null,
   created_at timestamptz not null default timezone('utc', now()),
+  constraint booking_status_history_severity_chk
+    check (severity in ('minor', 'moderate', 'urgent')),
   constraint booking_status_history_status_chk
     check (
       status in (
@@ -434,10 +443,27 @@ begin
   if tg_op = 'INSERT' then
     insert into public.booking_status_history (
       booking_id,
+      booking_number,
+      service_name_snapshot,
+      problem_name_snapshot,
+      severity,
+      scheduled_date,
+      scheduled_slot_label,
+      estimated_total,
       status
     )
     values (
       new.id,
+      new.booking_number,
+      new.service_name_snapshot,
+      coalesce(
+        new.problem_name_snapshot,
+        nullif(btrim(coalesce(new.custom_problem, '')), '')
+      ),
+      new.severity,
+      new.scheduled_date,
+      new.scheduled_slot_label,
+      new.estimated_total,
       new.status
     );
 
@@ -447,10 +473,27 @@ begin
   if tg_op = 'UPDATE' and old.status is distinct from new.status then
     insert into public.booking_status_history (
       booking_id,
+      booking_number,
+      service_name_snapshot,
+      problem_name_snapshot,
+      severity,
+      scheduled_date,
+      scheduled_slot_label,
+      estimated_total,
       status
     )
     values (
       new.id,
+      new.booking_number,
+      new.service_name_snapshot,
+      coalesce(
+        new.problem_name_snapshot,
+        nullif(btrim(coalesce(new.custom_problem, '')), '')
+      ),
+      new.severity,
+      new.scheduled_date,
+      new.scheduled_slot_label,
+      new.estimated_total,
       new.status
     );
   end if;
