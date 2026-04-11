@@ -3,7 +3,7 @@
 // Sends profileScreen param so HomeBottomNav can hide tab bar on sub-screens
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { BackHandler, View, StyleSheet } from 'react-native';
+import { Alert, BackHandler, View, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import ProfileMain from './ProfileFlow/ProfileMain';
@@ -17,15 +17,28 @@ import ShareScreen from './ProfileFlow/ShareScreen';
 import SubscriptionScreen from './ProfileFlow/SubscriptionScreen';
 import AppearanceScreen from './ProfileFlow/AppearanceScreen';
 import {
+  addAddress,
   getAddresses,
+  removeAddress,
+  setDefaultAddress,
   subscribeToAddresses,
-  updateAddresses,
 } from '../state/addressStore';
+import {
+  clearAuthenticatedState,
+} from '../state/authStore';
+import {
+  resetAuthenticatedAppData,
+} from '../state/appDataBootstrap';
 import {
   getProfile,
   subscribeToProfile,
   updateProfile,
 } from '../state/profileStore';
+import {
+  getBookings,
+  subscribeToBookings,
+} from '../state/bookingStore';
+import { supabase } from '../lib/supabase';
 
 const SCREENS = {
   MAIN: 'main',
@@ -46,6 +59,7 @@ export default function Profile({ navigation, route }) {
   const [activeScreen, setActiveScreen] = useState(SCREENS.MAIN);
   const [addresses, setAddresses] = useState(() => getAddresses());
   const [profile, setProfile] = useState(() => getProfile());
+  const [bookings, setBookings] = useState(() => getBookings());
   const returnToBooking = route?.params?.returnToBooking === true;
   const bookingReturnStep = route?.params?.returnStep || 4;
 
@@ -68,11 +82,19 @@ export default function Profile({ navigation, route }) {
 
   useEffect(() => subscribeToAddresses(setAddresses), []);
   useEffect(() => subscribeToProfile(setProfile), []);
+  useEffect(() => subscribeToBookings(setBookings), []);
 
   const navigate = (screen) => setActiveScreen(screen);
 
-  const handleSaveProfile = useCallback((updates) => {
-    updateProfile(updates);
+  const handleSaveProfile = useCallback(async (updates) => {
+    const result = await updateProfile(updates);
+
+    if (result.error) {
+      Alert.alert('Could not save profile', result.error.message);
+      return false;
+    }
+
+    return true;
   }, []);
 
   const goBack = useCallback(() => {
@@ -113,49 +135,50 @@ export default function Profile({ navigation, route }) {
     }, [activeScreen, goBack])
   );
 
-  const handleAddAddress = useCallback((newAddress) => {
-    updateAddresses((prev) => {
-      const shouldBeDefault = newAddress.isDefault || prev.length === 0;
-      const nextBase = shouldBeDefault
-        ? prev.map((item) => ({ ...item, isDefault: false }))
-        : prev;
-
-      return [
-        ...nextBase,
-        {
-          id: `address-${Date.now()}`,
-          label: newAddress.label.trim(),
-          address: newAddress.address.trim(),
-          isDefault: shouldBeDefault,
-        },
-      ];
+  const handleAddAddress = useCallback(async (newAddress) => {
+    const shouldBeDefault = newAddress.isDefault || addresses.length === 0;
+    const result = await addAddress({
+      ...newAddress,
+      isDefault: shouldBeDefault,
     });
+
+    if (result.error) {
+      Alert.alert('Could not save address', result.error.message);
+    }
+  }, [addresses.length]);
+
+  const handleDeleteAddress = useCallback(async (addressId) => {
+    const result = await removeAddress(addressId);
+
+    if (result.error) {
+      Alert.alert('Could not delete address', result.error.message);
+    }
   }, []);
 
-  const handleDeleteAddress = useCallback((addressId) => {
-    updateAddresses((prev) => {
-      if (prev.length <= 1) {
-        return prev;
-      }
+  const handleSetDefaultAddress = useCallback(async (addressId) => {
+    const result = await setDefaultAddress(addressId);
 
-      const next = prev.filter((item) => item.id !== addressId);
+    if (result.error) {
+      Alert.alert('Could not update address', result.error.message);
+    }
+  }, []);
 
-      if (!next.some((item) => item.isDefault) && next.length) {
-        return next.map((item, index) => (
-          index === 0 ? { ...item, isDefault: true } : item
-        ));
-      }
+  const handleSignOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    clearAuthenticatedState();
+    await resetAuthenticatedAppData();
 
-      return next;
+    let rootNavigation = navigation;
+
+    while (rootNavigation.getParent?.()) {
+      rootNavigation = rootNavigation.getParent();
+    }
+
+    rootNavigation.reset({
+      index: 0,
+      routes: [{ name: 'Flash' }],
     });
-  }, []);
-
-  const handleSetDefaultAddress = useCallback((addressId) => {
-    updateAddresses((prev) => prev.map((item) => ({
-      ...item,
-      isDefault: item.id === addressId,
-    })));
-  }, []);
+  }, [navigation]);
 
   const handleAddressSelect = (selectedAddress) => {
     if (returnToBooking) {
@@ -214,7 +237,15 @@ export default function Profile({ navigation, route }) {
       case SCREENS.SUBSCRIPTION:
         return <SubscriptionScreen onBack={goBack} />;
       default:
-        return <ProfileMain onNavigate={navigate} profile={profile} />;
+        return (
+          <ProfileMain
+            onNavigate={navigate}
+            onSignOut={handleSignOut}
+            profile={profile}
+            addresses={addresses}
+            bookings={bookings}
+          />
+        );
     }
   };
 

@@ -11,6 +11,19 @@ import LinearGradient from 'react-native-linear-gradient';
 
 import { getThemeColors } from '../theme';
 import { useAppTheme } from '../theme/ThemeProvider';
+import {
+  clearAuthenticatedState,
+  completePhoneAuth,
+} from '../state/authStore';
+import {
+  resetAuthenticatedAppData,
+  syncAuthenticatedAppData,
+} from '../state/appDataBootstrap';
+import { supabase } from '../lib/supabase';
+import {
+  fetchOwnProfileRecord,
+  hasStoredFullName,
+} from '../state/profileStore';
 
 const { width, height } = Dimensions.get('window');
 
@@ -90,6 +103,8 @@ export default function FlashScreen({ navigation }) {
   const pillY = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
+    let isMounted = true;
+
     Animated.loop(
       Animated.sequence([
         Animated.timing(glowPulse, { toValue: 0.30, duration: 1400, useNativeDriver: true }),
@@ -118,9 +133,49 @@ export default function FlashScreen({ navigation }) {
       ]),
     ]).start();
 
-    const timer = setTimeout(() => navigation.replace('Onboarding'), 2800);
-    return () => clearTimeout(timer);
-  }, []);
+    Promise.all([
+      supabase.auth.getSession(),
+      new Promise((resolve) => setTimeout(resolve, 2800)),
+    ]).then(async ([sessionResult]) => {
+      if (!isMounted) {
+        return;
+      }
+
+      const sessionPhone = sessionResult?.data?.session?.user?.phone || '';
+      let nextRoute;
+
+      if (sessionPhone) {
+        completePhoneAuth(sessionPhone);
+        await syncAuthenticatedAppData();
+
+        const profileResult = await fetchOwnProfileRecord();
+        const requiresNameSetup = !profileResult.error && !hasStoredFullName(profileResult.data);
+
+        nextRoute = requiresNameSetup ? 'NameSetup' : 'Main';
+      } else {
+        clearAuthenticatedState();
+        await resetAuthenticatedAppData();
+        nextRoute = 'Onboarding';
+      }
+
+      navigation.replace(nextRoute);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    glowOpacity,
+    glowPulse,
+    iconOpacity,
+    iconScale,
+    navigation,
+    pillOpacity,
+    pillY,
+    tagOpacity,
+    textOpacity,
+    textY,
+  ]);
 
   return (
     <View style={styles.container}>

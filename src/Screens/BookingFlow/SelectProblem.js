@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,10 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import { SERVICE_PROBLEMS } from '../../data/serviceProblems';
+import {
+  getProblemsForService,
+  subscribeToServiceCatalog,
+} from '../../state/serviceStore';
 import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
 import { useAppTheme } from '../../theme/ThemeProvider';
 
@@ -77,7 +80,9 @@ const SEVERITY_META = {
   },
 };
 
-const getProblemIconName = (problemId) => PROBLEM_ICON_MAP[problemId] || 'tools';
+const getProblemIconName = (problem) => (
+  problem?.iconName || PROBLEM_ICON_MAP[problem?.id] || 'tools'
+);
 
 const getSeverityMeta = (severity, colors) => (
   SEVERITY_META[severity] || {
@@ -95,8 +100,7 @@ export default function SelectProblem({ service, onNext }) {
   const [selectedProblem, setSelectedProblem] = useState(null);
   const [customText, setCustomText] = useState('');
   const [isInputFocused, setIsInputFocused] = useState(false);
-
-  const problems = SERVICE_PROBLEMS[service?.id] || [];
+  const [problems, setProblems] = useState(() => getProblemsForService(service?.id));
   const serviceAccent = service?.accentColor || colors.primary;
   const serviceSoft = service?.lightColor || colors.primaryLight;
   const serviceLabel = service?.label || 'Home Service';
@@ -106,6 +110,14 @@ export default function SelectProblem({ service, onNext }) {
   const helperText = customText.length > 10
     ? 'AI will review this note and help match the best fix.'
     : 'Tip: mention leaks, sounds, smells, or when the issue started.';
+
+  useEffect(() => {
+    setProblems(getProblemsForService(service?.id));
+  }, [service?.id]);
+
+  useEffect(() => subscribeToServiceCatalog(() => {
+    setProblems(getProblemsForService(service?.id));
+  }), [service?.id]);
 
   const handleChipPress = (problem) => {
     setSelectedProblem((prev) => (prev?.id === problem.id ? null : problem));
@@ -215,7 +227,7 @@ export default function SelectProblem({ service, onNext }) {
                       ]}
                     >
                       <Icon
-                        name={getProblemIconName(item.id)}
+                        name={getProblemIconName(item)}
                         size={22}
                         color={serviceAccent}
                       />

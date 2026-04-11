@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
   TouchableOpacity,
@@ -10,16 +11,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import {
-  PRICING,
-  PARTS_CATALOG,
-  REPAIR_PROTECTION_PRICE,
-} from '../../data/serviceProblems';
 import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
 import { useAppTheme } from '../../theme/ThemeProvider';
 
 const BRAND_ORANGE = '#FF6B2B';
 const BRAND_SOFT = '#FFF0E8';
+const REPAIR_PROTECTION_PRICE = 19;
 
 const formatCurrency = (value) => `\u20B9${value}`;
 
@@ -132,6 +129,7 @@ export default function PriceSummary({
   address,
   navigation,
   onConfirm,
+  isSubmitting = false,
 }) {
   const { isDark } = useAppTheme();
   const colors = getThemeColors(isDark);
@@ -141,12 +139,20 @@ export default function PriceSummary({
   const [repairProtection, setRepairProtection] = useState(true);
   const scrollBottomPadding = bottom + 108;
 
-  const pricing = PRICING[service?.id] || {
-    visitCharge: 149,
-    labourCost: 300,
-    platformFee: 49,
-  };
-  const part = problem?.id ? PARTS_CATALOG[problem.id] : null;
+  const pricing = useMemo(() => ({
+    visitCharge: Number(service?.baseVisitCharge || 149),
+    labourCost: Number(service?.baseLabourCost || 300),
+    platformFee: Number(service?.platformFee || 49),
+  }), [service?.baseLabourCost, service?.baseVisitCharge, service?.platformFee]);
+  const part = useMemo(() => (
+    problem?.estimatedPartsName
+      ? {
+        name: problem.estimatedPartsName,
+        mrp: Number(problem.estimatedPartsMrp || problem.estimatedPartsPrice || 0),
+        price: Number(problem.estimatedPartsPrice || 0),
+      }
+      : null
+  ), [problem?.estimatedPartsMrp, problem?.estimatedPartsName, problem?.estimatedPartsPrice]);
   const urgencySurcharge = severity === 'urgent' ? 150 : severity === 'moderate' ? 50 : 0;
   const severityMeta = severityMetaMap[severity] || severityMetaMap.minor;
   const displayProblem = customProblem || problem?.label || 'General service';
@@ -339,11 +345,18 @@ export default function PriceSummary({
 
       <TouchableOpacity
         style={styles.confirmBtn}
-        onPress={onConfirm}
+        onPress={() => onConfirm?.({ protectionSelected: repairProtection })}
         activeOpacity={0.92}
+        disabled={isSubmitting}
       >
-        <Text style={styles.confirmBtnText}>Continue to payment</Text>
-        <Icon name="arrow-right" size={18} color="#FFFFFF" style={styles.confirmBtnIcon} />
+        {isSubmitting ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <>
+            <Text style={styles.confirmBtnText}>Confirm Booking</Text>
+            <Icon name="arrow-right" size={18} color="#FFFFFF" style={styles.confirmBtnIcon} />
+          </>
+        )}
       </TouchableOpacity>
 
       <View style={styles.bottomSpace} />

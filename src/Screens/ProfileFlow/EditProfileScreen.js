@@ -69,6 +69,7 @@ export default function EditProfileScreen({
   const [lastName, setLastName] = useState(initialLastName);
   const [phone, setPhone] = useState(profile.phone || INITIAL_PROFILE.phone);
   const [email, setEmail] = useState(profile.email || INITIAL_PROFILE.email);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const { firstName: nextFirstName, lastName: nextLastName } = splitName(
@@ -87,16 +88,24 @@ export default function EditProfileScreen({
       .map(part => part.charAt(0).toUpperCase())
       .join('') || 'RS';
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextName = [firstName.trim(), lastName.trim()]
       .filter(Boolean)
       .join(' ');
 
-    onSaveProfile?.({
+    setIsSaving(true);
+
+    const saveResult = await onSaveProfile?.({
       name: nextName || profile.name || INITIAL_PROFILE.name,
       phone: phone.trim() || profile.phone || INITIAL_PROFILE.phone,
-      email: email.trim() || profile.email || INITIAL_PROFILE.email,
+      email: email.trim(),
     });
+
+    setIsSaving(false);
+
+    if (saveResult === false) {
+      return;
+    }
 
     onBack();
   };
@@ -168,6 +177,7 @@ export default function EditProfileScreen({
                 placeholder="+91 XXXXX XXXXX"
                 keyboardType="phone-pad"
                 maxLength={16}
+                editable={false}
               />
 
               <InputField
@@ -187,8 +197,11 @@ export default function EditProfileScreen({
               style={styles.mainSaveBtn}
               onPress={handleSave}
               activeOpacity={0.9}
+              disabled={isSaving}
             >
-              <Text style={styles.mainSaveBtnText}>Save Changes</Text>
+              <Text style={styles.mainSaveBtnText}>
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </Text>
               <View style={styles.mainSaveBtnArrow} />
             </TouchableOpacity>
           </ScrollView>

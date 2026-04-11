@@ -16,6 +16,12 @@ const generateDates = () => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const result = [];
   const today = new Date();
+  const formatIsoDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   for (let index = 0; index < 7; index += 1) {
     const date = new Date(today);
@@ -26,6 +32,7 @@ const generateDates = () => {
       dayName: index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : days[date.getDay()],
       date: date.getDate(),
       month: months[date.getMonth()],
+      isoDate: formatIsoDate(date),
       fullDate: date.toDateString(),
       isBusy: date.getDay() === 0,
     });

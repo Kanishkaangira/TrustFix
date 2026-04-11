@@ -14,6 +14,7 @@ import LinearGradient from 'react-native-linear-gradient';
 
 import { getThemeColors } from '../theme';
 import { useAppTheme } from '../theme/ThemeProvider';
+import { markOnboardingComplete } from '../state/authStore';
 
 const { width, height } = Dimensions.get('window');
 
@@ -83,7 +84,7 @@ function FloatingIcon({ duration, delay, children }) {
 
     loop.start();
     return () => loop.stop();
-  }, []);
+  }, [anim, delay, duration]);
 
   const translateY = anim.interpolate({
     inputRange: [0, 1],
@@ -105,12 +106,17 @@ export default function OnboardingScreen({ navigation }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const flatRef = useRef(null);
 
+  const finishOnboarding = () => {
+    markOnboardingComplete();
+    navigation.replace('Login');
+  };
+
   const goNext = () => {
     if (activeIndex < slides.length - 1) {
       flatRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
       setActiveIndex((current) => current + 1);
     } else {
-      navigation.replace('Main');
+      finishOnboarding();
     }
   };
 
@@ -161,7 +167,7 @@ export default function OnboardingScreen({ navigation }) {
 
         {!item.isLast ? (
           <TouchableOpacity
-            onPress={() => navigation.replace('Main')}
+            onPress={finishOnboarding}
             style={styles.skipBtn}
           >
             <Text style={styles.skipText}>Skip</Text>

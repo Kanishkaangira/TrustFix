@@ -23,11 +23,11 @@ import {
 import { useAppTheme } from '../../theme/ThemeProvider';
 
 const DEFAULT_PROFILE = {
-  name: 'Rahul Sharma',
-  phone: '+91 98765 43210',
-  email: 'rahul.sharma@gmail.com',
-  plan: 'HomeCare Pro',
-  planMeta: 'Active | Renews Apr 11, 2026',
+  name: 'TrustFix User',
+  phone: '',
+  email: '',
+  plan: 'No active plan',
+  planMeta: 'Choose a plan to unlock extra benefits',
 };
 
 const createIconStyles = colors =>
@@ -272,7 +272,13 @@ const IconAppear = ({ colors, gi }) => (
   </View>
 );
 
-export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
+export default function ProfileMain({
+  onNavigate,
+  onSignOut,
+  profile = DEFAULT_PROFILE,
+  addresses = [],
+  bookings = [],
+}) {
   const colors = useProfileColors();
   const { mode } = useAppTheme();
   const { bottom } = useSafeAreaInsets();
@@ -280,6 +286,24 @@ export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
   const gi = useMemo(() => createIconStyles(colors), [colors]);
   const appearanceLabel = mode === 'dark' ? 'Dark' : 'Light';
   const scrollBottomPadding = bottom + 96;
+  const emailLabel = profile.email || 'Add your email address';
+  const savedAddressCount = addresses.length;
+  const savedAddressSubtitle = savedAddressCount === 0
+    ? 'No saved addresses yet'
+    : savedAddressCount === 1
+      ? addresses[0].label
+      : `${addresses[0].label} + ${savedAddressCount - 1} more`;
+  const totalSpent = bookings.reduce((sum, booking) => (
+    booking.status === 'cancelled' ? sum : sum + Number(booking.estimatedTotal || 0)
+  ), 0);
+  const activeJobs = bookings.filter((booking) => (
+    !['completed', 'cancelled'].includes(String(booking.status || '').trim())
+  )).length;
+  const stats = [
+    { val: String(bookings.length), label: 'Bookings' },
+    { val: `INR ${totalSpent.toLocaleString('en-IN')}`, label: 'Total Spent' },
+    { val: String(activeJobs), label: 'Active Jobs' },
+  ];
 
   const initials = profile.name
     .split(' ')
@@ -348,7 +372,7 @@ export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
               <Text style={styles.heroName}>{profile.name}</Text>
               <Text style={styles.heroPhone}>{profile.phone}</Text>
               <Text style={styles.heroEmail} numberOfLines={1}>
-                {profile.email}
+                {emailLabel}
               </Text>
             </View>
           </View>
@@ -363,11 +387,7 @@ export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
           ]}
         >
           <View style={styles.statsStrip}>
-            {[
-              { val: '12', label: 'Services' },
-              { val: 'INR 18k', label: 'Total Spent' },
-              { val: '3', label: 'Warranties' },
-            ].map((stat, index) => (
+            {stats.map((stat, index) => (
               <View
                 key={stat.label}
                 style={[styles.statCell, index < 2 && styles.statCellBorder]}
@@ -413,8 +433,8 @@ export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
               iconBg={colors.brandSoft}
               IconComponent={() => <IconLocation colors={colors} gi={gi} />}
               title="Saved Addresses"
-              subtitle="Home, Office + 1 more"
-              rightValue="3"
+              subtitle={savedAddressSubtitle}
+              rightValue={savedAddressCount ? String(savedAddressCount) : undefined}
               onPress={() => onNavigate('addresses')}
             />
             <RowDivider />
@@ -450,8 +470,8 @@ export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
               iconBg={colors.brandSoft}
               IconComponent={() => <IconStar gi={gi} />}
               title="Subscription Plan"
-              subtitle="HomeCare Pro | Active"
-              rightChip="Pro"
+              subtitle={profile.planMeta}
+              rightChip={profile.plan === 'No active plan' ? undefined : profile.plan}
               rightChipVariant="brand"
               onPress={() => onNavigate('subscription')}
             />
@@ -498,7 +518,7 @@ export default function ProfileMain({ onNavigate, profile = DEFAULT_PROFILE }) {
               onPress={() =>
                 Alert.alert('Logout', 'Are you sure you want to logout?', [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Logout', style: 'destructive', onPress: () => {} },
+                  { text: 'Logout', style: 'destructive', onPress: onSignOut },
                 ])
               }
             />

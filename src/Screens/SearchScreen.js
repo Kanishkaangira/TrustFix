@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -16,10 +16,14 @@ import Voice from '@react-native-voice/voice';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../Components/ScreenWrapper';
+import {
+  getServices as getCatalogServices,
+  subscribeToServiceCatalog,
+} from '../state/serviceStore';
 import { FONT, SHADOW, SPACING, getThemeColors } from '../theme';
 import { useAppTheme } from '../theme/ThemeProvider';
 
-const SERVICES = [
+const FALLBACK_SERVICES = [
   {
     id: 'ac',
     name: 'AC Repair',
@@ -127,11 +131,120 @@ export default function SearchScreen({ navigation, route }) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const autoListenTrigger = route?.params?.autoListenTrigger ?? null;
   const [query, setQuery] = useState('');
+  const [services, setServices] = useState(() => {
+    const catalogServices = getCatalogServices();
+    return catalogServices.length ? catalogServices : FALLBACK_SERVICES;
+  });
   const [isListening, setIsListening] = useState(false);
   const [showListeningFocus, setShowListeningFocus] = useState(false);
   const [voiceToast, setVoiceToast] = useState(null);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimerRef = useRef(null);
+
+  useEffect(() => subscribeToServiceCatalog((nextCatalog) => {
+    const nextServices = nextCatalog.services || [];
+    setServices(nextServices.length ? nextServices : FALLBACK_SERVICES);
+  }), []);
+
+  const hideVoiceToast = useCallback(() => {
+    Animated.timing(toastAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setVoiceToast(null);
+      }
+    });
+  }, [toastAnim]);
+
+  const showVoiceToast = useCallback((message) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+
+    setVoiceToast(message);
+    Animated.timing(toastAnim, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+
+    toastTimerRef.current = setTimeout(() => {
+      hideVoiceToast();
+    }, 2400);
+  }, [hideVoiceToast, toastAnim]);
+
+  const stopVoiceSearch = useCallback(async (mode = 'stop') => {
+    setIsListening(false);
+    setShowListeningFocus(false);
+
+    if (!HAS_VOICE_NATIVE_MODULE) {
+      return;
+    }
+
+    try {
+      if (mode === 'cancel') {
+        await Voice.cancel();
+        return;
+      }
+
+      await Voice.stop();
+    } catch (_) {}
+  }, []);
+
+  const handleSearchFieldFocus = () => {
+    if (!isListening) {
+      return;
+    }
+
+    void stopVoiceSearch('cancel');
+  };
+
+  const handleMicPress = useCallback(async () => {
+    try {
+      if (!HAS_VOICE_NATIVE_MODULE) {
+        Alert.alert(
+          'Voice search not ready',
+          'Voice search needs a full app rebuild after installing the library. Close the app and run the Android build again.',
+        );
+        return;
+      }
+
+      if (isListening) {
+        await stopVoiceSearch();
+        return;
+      }
+
+      Keyboard.dismiss();
+
+      const isAvailable = await Voice.isAvailable();
+      if (!isAvailable) {
+        Alert.alert('Voice search unavailable', 'Speech recognition is not available on this device.');
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        const speechServices = await Voice.getSpeechRecognitionServices();
+        if (!speechServices?.length) {
+          Alert.alert(
+            'Speech service missing',
+            'No speech recognition service was found on this device. Please enable Google voice typing or install a speech service.',
+          );
+          return;
+        }
+      }
+
+      await Voice.cancel().catch(() => {});
+      await Voice.start('en-IN', {
+        REQUEST_PERMISSIONS_AUTO: true,
+      });
+    } catch (_) {
+      setIsListening(false);
+      setShowListeningFocus(false);
+      showVoiceToast('Unable to start voice search right now.');
+    }
+  }, [isListening, showVoiceToast, stopVoiceSearch]);
 
   useEffect(() => {
     if (!HAS_VOICE_NATIVE_MODULE) {
@@ -184,7 +297,7 @@ export default function SearchScreen({ navigation, route }) {
           }
         });
     };
-  }, []);
+  }, [showVoiceToast]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
@@ -197,7 +310,7 @@ export default function SearchScreen({ navigation, route }) {
     });
 
     return unsubscribe;
-  }, [navigation, isListening, showListeningFocus]);
+  }, [navigation, isListening, showListeningFocus, stopVoiceSearch]);
 
   useEffect(() => {
     if (!autoListenTrigger) {
@@ -210,132 +323,32 @@ export default function SearchScreen({ navigation, route }) {
     }, 220);
 
     return () => clearTimeout(timer);
-  }, [autoListenTrigger, navigation]);
+  }, [autoListenTrigger, handleMicPress, navigation]);
 
   const filteredServices = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
     if (!normalizedQuery) {
-      return SERVICES;
+      return services;
     }
 
-    return SERVICES.filter((service) => {
-      const haystack = `${service.name} ${service.subtitle}`.toLowerCase();
+    return services.filter((service) => {
+      const haystack = `${service.name || service.label} ${service.subtitle || service.helper}`.toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [query]);
+  }, [query, services]);
 
   const openBookingForService = (service) => {
     navigation.navigate('Main', {
       screen: 'Booking',
       params: {
-        service: service.bookingService,
+        service: service.bookingService || service,
         serviceTrigger: Date.now(),
       },
     });
   };
 
   const applySearchChip = (value) => setQuery(value);
-
-  const hideVoiceToast = () => {
-    Animated.timing(toastAnim, {
-      toValue: 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setVoiceToast(null);
-      }
-    });
-  };
-
-  const showVoiceToast = (message) => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
-
-    setVoiceToast(message);
-    Animated.timing(toastAnim, {
-      toValue: 1,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-
-    toastTimerRef.current = setTimeout(() => {
-      hideVoiceToast();
-    }, 2400);
-  };
-
-  const stopVoiceSearch = async (mode = 'stop') => {
-    setIsListening(false);
-    setShowListeningFocus(false);
-
-    if (!HAS_VOICE_NATIVE_MODULE) {
-      return;
-    }
-
-    try {
-      if (mode === 'cancel') {
-        await Voice.cancel();
-        return;
-      }
-
-      await Voice.stop();
-    } catch (_) {}
-  };
-
-  const handleSearchFieldFocus = () => {
-    if (!isListening) {
-      return;
-    }
-
-    void stopVoiceSearch('cancel');
-  };
-
-  const handleMicPress = async () => {
-    try {
-      if (!HAS_VOICE_NATIVE_MODULE) {
-        Alert.alert(
-          'Voice search not ready',
-          'Voice search needs a full app rebuild after installing the library. Close the app and run the Android build again.',
-        );
-        return;
-      }
-
-      if (isListening) {
-        await stopVoiceSearch();
-        return;
-      }
-
-      Keyboard.dismiss();
-
-      const isAvailable = await Voice.isAvailable();
-      if (!isAvailable) {
-        Alert.alert('Voice search unavailable', 'Speech recognition is not available on this device.');
-        return;
-      }
-
-      if (Platform.OS === 'android') {
-        const services = await Voice.getSpeechRecognitionServices();
-        if (!services?.length) {
-          Alert.alert(
-            'Speech service missing',
-            'No speech recognition service was found on this device. Please enable Google voice typing or install a speech service.',
-          );
-          return;
-        }
-      }
-
-      await Voice.cancel().catch(() => {});
-      await Voice.start('en-IN', {
-        REQUEST_PERMISSIONS_AUTO: true,
-      });
-    } catch (_) {
-      setIsListening(false);
-      setShowListeningFocus(false);
-      showVoiceToast('Unable to start voice search right now.');
-    }
-  };
 
   return (
     <ScreenWrapper
@@ -438,8 +451,8 @@ export default function SearchScreen({ navigation, route }) {
                   </View>
 
                   <View style={styles.resultText}>
-                    <Text style={styles.resultTitle}>{service.name}</Text>
-                    <Text style={styles.resultSubtitle}>{service.subtitle}</Text>
+                    <Text style={styles.resultTitle}>{service.name || service.label}</Text>
+                    <Text style={styles.resultSubtitle}>{service.subtitle || service.helper}</Text>
                     <Text style={styles.resultPrice}>from {service.startingAt}</Text>
                   </View>
 

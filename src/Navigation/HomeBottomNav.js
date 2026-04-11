@@ -12,9 +12,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import Home from '../Screens/Home';
-import AiChat from '../Screens/AiChat';
 import Profile from '../Screens/Profile';
 import Booking from '../Screens/Booking';
+import ServiceLedger from '../Screens/ServiceLedger';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { getThemeColors } from '../theme';
 
@@ -28,10 +28,10 @@ const TABS = [
     activeIcon: 'home-variant',
   },
   {
-    name: 'AI Chat',
-    label: 'AI Chat',
-    icon: 'robot-outline',
-    activeIcon: 'robot',
+    name: 'History',
+    label: 'History',
+    icon: 'timeline-text-outline',
+    activeIcon: 'timeline-text',
   },
   {
     name: 'Booking',
@@ -47,7 +47,7 @@ const TABS = [
   },
 ];
 
-const TAB_BAR_BASE_HEIGHT = Platform.OS === 'ios' ? 70 : 62;
+const TAB_BAR_BASE_HEIGHT = Platform.OS === 'ios' ? 60 : 54;
 
 const getTabColors = isDark => {
   const theme = getThemeColors(isDark);
@@ -108,85 +108,77 @@ const CustomTabBar = ({ state, navigation }) => {
           end={{ x: 1, y: 1 }}
           style={styles.bar}
         >
-          <View style={styles.ambientGlow} />
-          <View style={styles.topSheen} />
-          {state.routes.map((route, index) => {
-            const isFocused = state.index === index;
-            const tab = TABS.find(item => item.name === route.name);
+          <View style={styles.tabsRow}>
+            {state.routes.map((route) => {
+              const isFocused =
+                state.index ===
+                state.routes.findIndex(item => item.key === route.key);
+              const tab = TABS.find(item => item.name === route.name);
 
-            const onPress = () => {
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
+              const onPress = () => {
+                const event = navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                });
 
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
+                if (!isFocused && !event.defaultPrevented) {
+                  navigation.navigate(route.name);
+                }
+              };
 
-            const onLongPress = () => {
-              navigation.emit({
-                type: 'tabLongPress',
-                target: route.key,
-              });
-            };
+              const onLongPress = () => {
+                navigation.emit({
+                  type: 'tabLongPress',
+                  target: route.key,
+                });
+              };
 
-            return (
-              <TouchableOpacity
-                key={route.key}
-                onPress={onPress}
-                onLongPress={onLongPress}
-                activeOpacity={0.88}
-                style={styles.tabItem}
-                accessibilityRole="button"
-                accessibilityState={isFocused ? { selected: true } : {}}
-                accessibilityLabel={tab?.label || route.name}
-              >
-                <View
-                  style={[styles.tabContent, isFocused && styles.activeTab]}
+              return (
+                <TouchableOpacity
+                  key={route.key}
+                  onPress={onPress}
+                  onLongPress={onLongPress}
+                  activeOpacity={0.88}
+                  style={styles.tabItem}
+                  accessibilityRole="button"
+                  accessibilityState={isFocused ? { selected: true } : {}}
+                  accessibilityLabel={tab?.label || route.name}
                 >
                   <View
-                    style={[
-                      styles.indicator,
-                      isFocused && styles.indicatorActive,
-                    ]}
-                  />
-                  {isFocused ? (
-                    <LinearGradient
-                      colors={[colors.activeStart, colors.activeEnd]}
-                      start={{ x: 0, y: 0.2 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.activeIconChip}
+                    style={[styles.tabContent, isFocused && styles.activeTab]}
+                  >
+                    <View
+                      style={[
+                        styles.iconChip,
+                        isFocused && styles.iconChipActive,
+                      ]}
                     >
                       <Icon
-                        name={tab?.activeIcon || tab?.icon || 'circle-outline'}
-                        size={17}
-                        color={colors.textOnActive}
-                      />
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.iconChip}>
-                      <Icon
-                        name={tab?.icon || 'circle-outline'}
-                        size={19}
-                        color={colors.textMuted}
+                        name={
+                          isFocused
+                            ? tab?.activeIcon || tab?.icon || 'circle-outline'
+                            : tab?.icon || 'circle-outline'
+                        }
+                        size={16}
+                        color={
+                          isFocused ? colors.textOnActive : colors.textMuted
+                        }
                       />
                     </View>
-                  )}
-                  <Text
-                    style={[styles.label, isFocused && styles.activeLabel]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.85}
-                  >
-                    {tab?.label || route.name}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+                    <Text
+                      style={[styles.label, isFocused && styles.activeLabel]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {tab?.label || route.name}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </LinearGradient>
       </View>
     </View>
@@ -204,7 +196,7 @@ const HomeBottomNav = () => (
     }}
   >
     <Tab.Screen name="Home" component={Home} />
-    <Tab.Screen name="AI Chat" component={AiChat} />
+    <Tab.Screen name="History" component={ServiceLedger} />
     <Tab.Screen name="Booking" component={Booking} />
     <Tab.Screen name="Profile" component={Profile} />
   </Tab.Navigator>
@@ -219,116 +211,86 @@ const createStyles = (colors, bottomInset) =>
       bottom: 0,
       left: 0,
       right: 0,
-      paddingHorizontal: 14,
+      paddingHorizontal: 12,
       paddingBottom:
-        bottomInset > 0 ? Math.max(bottomInset - 4, 8) : Platform.OS === 'ios' ? 10 : 8,
+        bottomInset > 0 ? Math.max(bottomInset - 6, 6) : Platform.OS === 'ios' ? 8 : 6,
     },
     shell: {
-      borderRadius: 24,
+      borderRadius: 20,
       shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: colors.isDark ? 0.3 : 0.12,
-      shadowRadius: 14,
-      elevation: 14,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: colors.isDark ? 0.24 : 0.1,
+      shadowRadius: 12,
+      elevation: 10,
     },
     bar: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderRadius: 24,
+      justifyContent: 'center',
+      borderRadius: 20,
       borderWidth: 1,
       borderColor: colors.border,
       overflow: 'hidden',
-      paddingHorizontal: 6,
-      paddingVertical: 6,
+      paddingHorizontal: 5,
+      paddingVertical: 4,
       backgroundColor: colors.surfaceTop,
       minHeight: TAB_BAR_BASE_HEIGHT,
     },
-    ambientGlow: {
-      position: 'absolute',
-      top: -28,
-      left: '50%',
-      marginLeft: -62,
-      width: 124,
-      height: 74,
-      borderRadius: 999,
-      backgroundColor: colors.ambientGlow,
-      opacity: 0.9,
-    },
-    topSheen: {
-      position: 'absolute',
-      top: 0,
-      left: 22,
-      right: 22,
-      height: 1,
-      backgroundColor: colors.sheen,
+    tabsRow: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
     },
     tabItem: {
       flex: 1,
       paddingHorizontal: 3,
       justifyContent: 'center',
+      minWidth: 0,
     },
     tabContent: {
       width: '100%',
-      minHeight: 48,
+      minHeight: 42,
       borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 3,
       paddingVertical: 4,
+      paddingHorizontal: 2,
     },
     activeTab: {
       backgroundColor: colors.primarySoft,
       borderWidth: 1,
       borderColor: colors.borderStrong,
-    },
-    indicator: {
-      width: 6,
-      height: 6,
-      borderRadius: 999,
-      backgroundColor: 'transparent',
-    },
-    indicatorActive: {
-      backgroundColor: colors.primary,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.35,
-      shadowRadius: 6,
-      elevation: 2,
+      borderRadius: 16,
     },
     iconChip: {
-      width: 32,
-      height: 32,
-      borderRadius: 11,
+      width: 30,
+      height: 30,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.iconShell,
       borderWidth: 1,
       borderColor: colors.iconShellBorder,
     },
-    activeIconChip: {
-      width: 36,
-      height: 36,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.borderStrong,
+    iconChipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
       shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: colors.isDark ? 0.16 : 0.18,
-      shadowRadius: 10,
-      elevation: 5,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: colors.isDark ? 0.14 : 0.16,
+      shadowRadius: 8,
+      elevation: 4,
     },
     label: {
-      fontSize: 9.5,
+      marginTop: 2,
+      fontSize: 8.5,
       fontWeight: '700',
       color: colors.textSecondary,
-      letterSpacing: 0.15,
+      letterSpacing: 0.1,
     },
     activeLabel: {
-      fontSize: 9.75,
       fontWeight: '800',
       color: colors.primary,
-      letterSpacing: 0.2,
     },
   });

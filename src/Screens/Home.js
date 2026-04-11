@@ -23,6 +23,10 @@ import {
   getProfile,
   subscribeToProfile,
 } from '../state/profileStore';
+import {
+  getServices as getCatalogServices,
+  subscribeToServiceCatalog,
+} from '../state/serviceStore';
 import { useAppTheme } from '../theme/ThemeProvider';
 
 // ─── Screen width used for responsive card sizing ─────────────
@@ -88,6 +92,15 @@ const getServices = (C) => [
   { id: '5', icon: 'broom',              name: 'Cleaning',   price: '₹399', iconColor: C.roseIcon,   bg: C.roseBg,   bookingService: { id: 'cleaning', label: 'Cleaning', shortLabel: 'Deep Cleaning', icon: 'broom', accentColor: '#E11D48', iconColor: '#E11D48', lightColor: '#FFE4E6', startingAt: '₹399' } },
 ];
 
+const buildHomeServiceCards = (services = []) => (
+  services.slice(0, 5).map((service) => ({
+    ...service,
+    name: service.shortLabel || service.label,
+    price: service.startingAt,
+    bg: service.lightColor,
+  }))
+);
+
 // 4 trust badges shown in horizontal scroll strip
 const getBadges = (C) => [
   { icon: 'shield-check-outline', label: 'Verified Pros',    color: '#22C55E', bg: C.badgeSuccessBg },
@@ -143,17 +156,21 @@ const Home = ({ navigation }) => {
   const { isDark } = useAppTheme();
   const C = useMemo(() => getHomeColors(isDark), [isDark]);
   const styles = useMemo(() => createStyles(C), [C]);
-  const services = useMemo(() => getServices(C), [C]);
   const badges = useMemo(() => getBadges(C), [C]);
   const [defaultAddress, setDefaultAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
   const [profile, setProfile] = useState(() => getProfile());
+  const [catalogServices, setCatalogServices] = useState(() => getCatalogServices());
   const [isAddressExpanded, setIsAddressExpanded] = useState(false);
+  const services = useMemo(
+    () => (catalogServices.length ? buildHomeServiceCards(catalogServices) : getServices(C)),
+    [C, catalogServices],
+  );
   const addressText = defaultAddress?.address || FALLBACK_ADDRESS.address;
   const isAddressLong = addressText.length > COLLAPSED_ADDRESS_CHAR_LIMIT;
   const collapsedAddressText = isAddressLong
     ? getCollapsedAddressPreview(addressText)
     : addressText;
-  const displayName = profile?.name || 'Rahul Sharma';
+  const displayName = profile?.name || 'TrustFix User';
   const displayInitials = getProfileInitials(displayName);
 
   useEffect(() => subscribeToAddresses((nextAddresses) => {
@@ -161,6 +178,9 @@ const Home = ({ navigation }) => {
     setDefaultAddress(nextDefaultAddress);
   }), []);
   useEffect(() => subscribeToProfile(setProfile), []);
+  useEffect(() => subscribeToServiceCatalog((nextCatalog) => {
+    setCatalogServices(nextCatalog.services || []);
+  }), []);
 
   useEffect(() => {
     setIsAddressExpanded(false);
@@ -174,6 +194,16 @@ const Home = ({ navigation }) => {
     navigation.getParent()?.navigate('Search', {
       autoListenTrigger: Date.now(),
     });
+  };
+
+  const openAiChat = () => {
+    const parentNavigation = navigation.getParent?.();
+    if (parentNavigation) {
+      parentNavigation.navigate('AiChat');
+      return;
+    }
+
+    navigation.navigate('AiChat');
   };
 
   const openBookingProblemStep = (service) => {
@@ -348,6 +378,58 @@ const Home = ({ navigation }) => {
           <Text style={styles.emergencyEmoji}>🔧</Text>
         </LinearGradient>
 
+        <View style={styles.aiSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>AI Diagnosis</Text>
+            <TouchableOpacity onPress={openAiChat}>
+              <Text style={styles.seeAll}>Open chat →</Text>
+            </TouchableOpacity>
+          </View>
+
+          <LinearGradient
+            colors={[C.bgCard, C.isDark ? '#1A2230' : '#FFF4ED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.aiFeatureCard}
+          >
+            <View style={styles.aiFeatureTop}>
+              <View style={styles.aiFeatureIconWrap}>
+                <Icon name="robot-excited-outline" size={26} color={C.coral} />
+              </View>
+              <View style={styles.aiFeatureTextWrap}>
+                <Text style={styles.aiFeatureTitle}>Show the issue. Get a diagnosis.</Text>
+                <Text style={styles.aiFeatureSubtitle}>
+                  Upload a photo, video or voice note and let TrustFix AI guide the next step.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.aiFeaturePills}>
+              <View style={styles.aiFeaturePill}>
+                <Icon name="image-outline" size={14} color={C.violetIcon} />
+                <Text style={styles.aiFeaturePillText}>Photo scan</Text>
+              </View>
+              <View style={styles.aiFeaturePill}>
+                <Icon name="microphone-outline" size={14} color={C.greenIcon} />
+                <Text style={styles.aiFeaturePillText}>Voice explain</Text>
+              </View>
+              <View style={styles.aiFeaturePill}>
+                <Icon name="clock-fast" size={14} color={C.amberIcon} />
+                <Text style={styles.aiFeaturePillText}>Fast estimate</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={styles.aiFeatureBtn}
+              onPress={openAiChat}
+            >
+              <Text style={styles.aiFeatureBtnText}>Start AI Diagnosis</Text>
+              <Icon name="arrow-right" size={18} color={C.white} />
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
+
         {/* SERVICES GRID */}
         <View style={styles.servicesSection}>
           <View style={styles.sectionHeader}>
@@ -362,7 +444,7 @@ const Home = ({ navigation }) => {
                 key={svc.id}
                 style={styles.svcCard}
                 activeOpacity={0.8}
-                onPress={() => openBookingProblemStep(svc.bookingService)}
+                onPress={() => openBookingProblemStep(svc.bookingService || svc)}
               >
                 <View style={[styles.svcIconWrap, { backgroundColor: svc.bg }]}>
                   <Icon name={svc.icon} size={28} color={svc.iconColor} />
@@ -788,6 +870,88 @@ const createStyles = (C) => StyleSheet.create({
     bottom: 12,
     fontSize: 72,
     opacity: 0.2,                // watermark effect
+  },
+
+  aiSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  aiFeatureCard: {
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    shadowColor: C.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: C.isDark ? 0.18 : 0.06,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  aiFeatureTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  aiFeatureIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: C.coralPale,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  aiFeatureTextWrap: {
+    flex: 1,
+  },
+  aiFeatureTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.textPrimary,
+    letterSpacing: -0.3,
+  },
+  aiFeatureSubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.textSecondary,
+  },
+  aiFeaturePills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  aiFeaturePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: C.bgBody,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  aiFeaturePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.textSecondary,
+  },
+  aiFeatureBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: C.coral,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  aiFeatureBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: C.white,
+    letterSpacing: 0.2,
   },
 
 

@@ -12,6 +12,10 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import BookingOrangeHero from '../../Components/BookingOrangeHero';
+import {
+  getServices as getCatalogServices,
+  subscribeToServiceCatalog,
+} from '../../state/serviceStore';
 import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../theme';
 import { useAppTheme } from '../../theme/ThemeProvider';
 
@@ -22,7 +26,7 @@ const COL_GAP = 12;
 const CARD_W = (width - H_PAD * 2 - COL_GAP) / 2;
 const CARD_H = CARD_W * 1.34;
 const HERO_ORANGE = '#FF6B2B';
-const TAB_BAR_H = Platform.OS === 'ios' ? 84 : 72;
+const TAB_BAR_H = Platform.OS === 'ios' ? 64 : 56;
 
 const HERO_STATS = [
   { value: '50K+', label: 'Customers' },
@@ -233,7 +237,16 @@ export default function SelectService({ onSelect }) {
   const { isDark } = useAppTheme();
   const colors = getThemeColors(isDark);
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const [services, setServices] = useState(() => {
+    const catalogServices = getCatalogServices();
+    return catalogServices.length ? catalogServices : SERVICES;
+  });
   const [selected, setSelected] = useState(null);
+
+  React.useEffect(() => subscribeToServiceCatalog((nextCatalog) => {
+    const nextServices = nextCatalog.services || [];
+    setServices(nextServices.length ? nextServices : SERVICES);
+  }), []);
 
   const handleTap = (service) => {
     setSelected(service.id);
@@ -268,7 +281,7 @@ export default function SelectService({ onSelect }) {
           </View>
 
           <View style={styles.grid}>
-            {SERVICES.map((service) => (
+            {services.map((service) => (
               <ServiceCard
                 key={service.id}
                 service={service}

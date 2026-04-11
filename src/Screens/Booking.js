@@ -7,6 +7,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   BackHandler,
   View,
   Text,
@@ -29,6 +30,7 @@ import {
   getDefaultAddress,
   subscribeToAddresses,
 } from '../state/addressStore';
+import { createBooking } from '../state/bookingStore';
 import { useAppTheme } from '../theme/ThemeProvider';
 
 // ─── Step constants ────────────────────────────────────────────
@@ -76,6 +78,7 @@ export default function Bookings({ route, navigation }) {
   const [defaultAddress, setDefaultAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
   const [bookingAddress, setBookingAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
   const [hasCustomAddress, setHasCustomAddress] = useState(false);
+  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const currentAddress = bookingAddress || defaultAddress || FALLBACK_ADDRESS;
 
   // Tell navigator what step we are on
@@ -214,6 +217,89 @@ export default function Bookings({ route, navigation }) {
     setStep(STEPS.PRICE_SUMMARY);
   };
 
+  const resetFlow = useCallback(() => {
+    setService(null);
+    setProblem(null);
+    setCustomProblem('');
+    setSeverity(null);
+    setDate(null);
+    setSlot(null);
+    setHasCustomAddress(false);
+    setBookingAddress(defaultAddress || FALLBACK_ADDRESS);
+    setStep(STEPS.SELECT_SERVICE);
+  }, [defaultAddress]);
+
+  const handleConfirmBooking = useCallback(async ({ protectionSelected }) => {
+    if (isSubmittingBooking) {
+      return;
+    }
+
+    if (!currentAddress?.id) {
+      Alert.alert(
+        'Add an address first',
+        'Please save a service address before confirming the booking.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Add Address',
+            onPress: () => navigation.navigate('Profile', {
+              openScreen: 'addresses',
+              returnToBooking: true,
+              returnStep: STEPS.PRICE_SUMMARY,
+            }),
+          },
+        ],
+      );
+      return;
+    }
+
+    try {
+      setIsSubmittingBooking(true);
+
+      const result = await createBooking({
+        service,
+        problem,
+        customProblem,
+        severity,
+        date,
+        slot,
+        address: currentAddress,
+        protectionSelected,
+      });
+
+      if (result.error) {
+        Alert.alert('Could not place booking', result.error.message);
+        return;
+      }
+
+      const createdBooking = result.data;
+      resetFlow();
+      navigation.navigate('Home');
+
+      Alert.alert(
+        'Booking placed',
+        createdBooking?.bookingNumber
+          ? `Your booking ${createdBooking.bookingNumber} has been created successfully.`
+          : 'Your booking has been created successfully.',
+      );
+    } catch (_) {
+      Alert.alert('Network error', 'Please try placing the booking again.');
+    } finally {
+      setIsSubmittingBooking(false);
+    }
+  }, [
+    currentAddress,
+    customProblem,
+    date,
+    isSubmittingBooking,
+    navigation,
+    problem,
+    resetFlow,
+    service,
+    severity,
+    slot,
+  ]);
+
   // ── Step renderer ──────────────────────────────────────────
   const renderStep = () => {
     switch (step) {
@@ -257,11 +343,8 @@ export default function Bookings({ route, navigation }) {
             slot={slot}
             address={currentAddress}
             navigation={navigation}
-            onConfirm={() =>
-              navigation.navigate('Payment', {
-                service, problem, customProblem, severity, date, slot, address: currentAddress,
-              })
-            }
+            isSubmitting={isSubmittingBooking}
+            onConfirm={handleConfirmBooking}
           />
         );
 
