@@ -26,7 +26,11 @@ import {
   toE164Phone,
 } from '../../lib/phone';
 import { supabase } from '../../lib/supabase';
-import { getAuthState, setPendingPhone } from '../../state/authStore';
+import {
+  getAuthState,
+  setAuthPortal,
+  setPendingPhone,
+} from '../../state/authStore';
 
 export default function AuthPhoneScreen({ navigation }) {
   const { isDark } = useAppTheme();
@@ -56,9 +60,15 @@ export default function AuthPhoneScreen({ navigation }) {
 
     try {
       setIsSubmitting(true);
+      setAuthPortal('customer');
 
       const { error } = await supabase.auth.signInWithOtp({
         phone: fullPhone,
+        options: {
+          data: {
+            app_role: 'customer',
+          },
+        },
       });
 
       if (error) {
@@ -67,7 +77,10 @@ export default function AuthPhoneScreen({ navigation }) {
       }
 
       setPendingPhone(fullPhone);
-      navigation.navigate('OtpVerification', { phone: fullPhone });
+      navigation.navigate('OtpVerification', {
+        phone: fullPhone,
+        appRole: 'customer',
+      });
     } catch (_) {
       Alert.alert('Network error', 'Please try again in a moment.');
     } finally {
@@ -194,9 +207,9 @@ export default function AuthPhoneScreen({ navigation }) {
                   <Icon name="hammer-wrench" size={18} color="#FF6E31" />
                 </View>
                 <View style={styles.portalCopy}>
-                  <Text style={styles.portalTitle}>Technician app preview</Text>
+                  <Text style={styles.portalTitle}>Technician login</Text>
                   <Text style={styles.portalText}>
-                    Open the technician-side screens from your design file
+                    Sign in to the technician workspace with the same OTP flow
                   </Text>
                 </View>
                 <Icon name="chevron-right" size={20} color={colors.inkMuted} />

@@ -24,10 +24,9 @@ import {
 import { useAppTheme } from '../../../theme/ThemeProvider';
 import { earningsSummary } from '../../../technician/mockData';
 import {
-  getTechnicianAddresses,
   getTechnicianProfile,
-  subscribeToTechnicianAddresses,
   subscribeToTechnicianProfile,
+  syncTechnicianProfileFromRemote,
 } from '../../../technician/profileStore';
 
 const TechnicianIcon = ({ name, color }) => (
@@ -40,24 +39,19 @@ export default function ProfileMain({ navigation }) {
   const { bottom } = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [profile, setProfile] = useState(() => getTechnicianProfile());
-  const [addresses, setAddresses] = useState(() => getTechnicianAddresses());
   const appearanceLabel = mode === 'dark' ? 'Dark' : 'Light';
   const scrollBottomPadding = bottom + 96;
   const emailLabel = profile.email || 'Add your work email address';
-  const savedAddressCount = addresses.length;
-  const savedAddressSubtitle = savedAddressCount === 0
-    ? 'No saved service addresses yet'
-    : savedAddressCount === 1
-      ? addresses[0].label
-      : `${addresses[0].label} + ${savedAddressCount - 1} more`;
   const stats = [
     { val: profile.jobsDone, label: 'Jobs Done' },
     { val: profile.rating, label: 'Rating' },
     { val: earningsSummary.total, label: 'This Month' },
   ];
 
-  useEffect(() => subscribeToTechnicianProfile(setProfile), []);
-  useEffect(() => subscribeToTechnicianAddresses(setAddresses), []);
+  useEffect(() => {
+    syncTechnicianProfileFromRemote();
+    return subscribeToTechnicianProfile(setProfile);
+  }, []);
 
   const initials = profile.name
     .split(' ')
@@ -189,15 +183,6 @@ export default function ProfileMain({ navigation }) {
               title="Edit Profile"
               subtitle="Name, email, city, service area"
               onPress={() => openProfileRoute('TechnicianProfileEdit')}
-            />
-            <RowDivider />
-            <SettingRow
-              iconBg={colors.brandSoft}
-              IconComponent={() => <TechnicianIcon name="map-marker-outline" color={colors.brand} />}
-              title="Service Addresses"
-              subtitle={savedAddressSubtitle}
-              rightValue={savedAddressCount ? String(savedAddressCount) : undefined}
-              onPress={() => openProfileRoute('TechnicianProfileAddresses')}
             />
             <RowDivider />
             <SettingRow

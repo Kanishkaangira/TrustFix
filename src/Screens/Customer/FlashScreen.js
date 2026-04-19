@@ -14,6 +14,7 @@ import { useAppTheme } from '../../theme/ThemeProvider';
 import {
   clearAuthenticatedState,
   completePhoneAuth,
+  getAuthState,
 } from '../../state/authStore';
 import {
   resetAuthenticatedAppData,
@@ -148,10 +149,33 @@ export default function FlashScreen({ navigation }) {
         completePhoneAuth(sessionPhone);
         await syncAuthenticatedAppData();
 
-        const profileResult = await fetchOwnProfileRecord();
-        const requiresNameSetup = !profileResult.error && !hasStoredFullName(profileResult.data);
+        const currentPortal = getAuthState().currentPortal;
+        let requiresNameSetup = false;
 
-        nextRoute = requiresNameSetup ? 'NameSetup' : 'Main';
+        if (currentPortal === 'technician') {
+          const technicianResult = await supabase.db.select('technician_profiles', {
+            filters: [{ column: 'id', op: 'eq', value: sessionResult?.data?.session?.user?.id }],
+            maybeSingle: true,
+          });
+
+          const hasTechnicianName = String(
+            technicianResult.data?.display_name || '',
+          ).trim().length > 0;
+
+          requiresNameSetup = !!technicianResult.error || !technicianResult.data || !hasTechnicianName;
+        } else {
+          const profileResult = await fetchOwnProfileRecord();
+          requiresNameSetup = !profileResult.error && !hasStoredFullName(profileResult.data);
+        }
+
+        if (requiresNameSetup) {
+          navigation.replace('NameSetup', {
+            appRole: currentPortal === 'technician' ? 'technician' : 'customer',
+          });
+          return;
+        }
+
+        nextRoute = currentPortal === 'technician' ? 'TechnicianMain' : 'Main';
       } else {
         clearAuthenticatedState();
         await resetAuthenticatedAppData();

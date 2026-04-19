@@ -9,6 +9,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   BackHandler,
+  Modal,
+  Pressable,
   View,
   Text,
   TouchableOpacity,
@@ -30,7 +32,18 @@ import {
   getDefaultAddress,
   subscribeToAddresses,
 } from '../../state/addressStore';
-import { createBooking } from '../../state/bookingStore';
+import {
+  createBooking,
+  syncBookingsFromRemote,
+} from '../../state/bookingStore';
+import {
+  fetchOwnProfileRecord,
+  getProfile,
+} from '../../state/profileStore';
+import {
+  openRazorpayCheckout,
+  verifyRazorpayPayment,
+} from '../../lib/payments/razorpay';
 import { useAppTheme } from '../../theme/ThemeProvider';
 
 // ─── Step constants ────────────────────────────────────────────
@@ -55,6 +68,14 @@ const FALLBACK_ADDRESS = {
   address: '42, Green Park, New Delhi',
 };
 const PROFILE_BRAND_ORANGE = '#FF6B2B';
+const BOOKING_MODAL_INITIAL_STATE = {
+  visible: false,
+  title: '',
+  message: '',
+  tone: 'brand',
+  ctaLabel: 'OK',
+  onClose: null,
+};
 
 
 // ─── Main controller ───────────────────────────────────────────
@@ -79,7 +100,25 @@ export default function Bookings({ route, navigation }) {
   const [bookingAddress, setBookingAddress] = useState(() => getDefaultAddress() || FALLBACK_ADDRESS);
   const [hasCustomAddress, setHasCustomAddress] = useState(false);
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
+  const [bookingModal, setBookingModal] = useState(BOOKING_MODAL_INITIAL_STATE);
   const currentAddress = bookingAddress || defaultAddress || FALLBACK_ADDRESS;
+
+  const showBookingModal = useCallback((nextModal) => {
+    setBookingModal({
+      ...BOOKING_MODAL_INITIAL_STATE,
+      ...nextModal,
+      visible: true,
+    });
+  }, []);
+
+  const handleCloseBookingModal = useCallback(() => {
+    const onClose = bookingModal.onClose;
+    setBookingModal(BOOKING_MODAL_INITIAL_STATE);
+
+    if (typeof onClose === 'function') {
+      onClose();
+    }
+  }, [bookingModal.onClose]);
 
   // Tell navigator what step we are on
   useEffect(() => {
@@ -272,18 +311,88 @@ export default function Bookings({ route, navigation }) {
         return;
       }
 
-      const createdBooking = result.data;
-      resetFlow();
-      navigation.navigate('Home');
+      if (result.paymentSetupError || !result.paymentOrder) {
+        resetFlow();
+        const paymentStartMessage = String(
+          result.paymentSetupError?.message || 'Payment could not be started right now.',
+        ).trim();
+        showBookingModal({
+          title: 'Payment not started',
+          message: `Your booking was not created because the initial payment could not be started. ${paymentStartMessage}`,
+          tone: 'warning',
+          onClose: () => navigation.navigate('Home'),
+        });
+        return;
+      }
 
-      Alert.alert(
-        'Booking placed',
-        createdBooking?.bookingNumber
-          ? `Your booking ${createdBooking.bookingNumber} has been created successfully.`
-          : 'Your booking has been created successfully.',
-      );
+      const storedProfile = getProfile();
+      const profileResult = await fetchOwnProfileRecord();
+      const customer = {
+        fullName: profileResult.data?.full_name || storedProfile.name || '',
+        email: profileResult.data?.email || storedProfile.email || '',
+        phone: profileResult.data?.phone || storedProfile.phone || '',
+      };
+
+      let checkoutResponse;
+
+      try {
+        checkoutResponse = await openRazorpayCheckout({
+          order: result.paymentOrder,
+          customer,
+          description: `TrustFix ${service?.label || service?.shortLabel || 'booking'} payment`,
+        });
+      } catch (checkoutError) {
+        resetFlow();
+
+        const checkoutMessage = String(
+          checkoutError?.description || checkoutError?.error?.description || 'Payment was not completed.',
+        ).trim();
+
+        showBookingModal({
+          title: 'Payment pending',
+          message: `Your booking was not created because the initial payment is still pending. ${checkoutMessage}`,
+          tone: 'warning',
+          onClose: () => navigation.navigate('Home'),
+        });
+        return;
+      }
+
+      const verificationResult = await verifyRazorpayPayment({
+        paymentOrderId: result.paymentOrder.id,
+        razorpayOrderId: checkoutResponse?.razorpay_order_id || result.paymentOrder.provider_order_id,
+        razorpayPaymentId: checkoutResponse?.razorpay_payment_id,
+        razorpaySignature: checkoutResponse?.razorpay_signature,
+      });
+
+      if (verificationResult.error) {
+        await syncBookingsFromRemote();
+        resetFlow();
+        showBookingModal({
+          title: 'Payment verification pending',
+          message: 'Payment verification could not be completed yet, so the booking has not been created.',
+          tone: 'warning',
+          onClose: () => navigation.navigate('Home'),
+        });
+        return;
+      }
+
+      const createdBooking = verificationResult.data?.booking || null;
+      await syncBookingsFromRemote();
+      resetFlow();
+      showBookingModal({
+        title: 'Booking confirmed',
+        message: createdBooking?.bookingNumber
+          ? `Booking ${createdBooking.bookingNumber} has been placed and the initial payment was completed successfully.`
+          : 'Your booking has been placed and the initial payment was completed successfully.',
+        tone: 'success',
+        onClose: () => navigation.navigate('Home'),
+      });
     } catch (_) {
-      Alert.alert('Network error', 'Please try placing the booking again.');
+      showBookingModal({
+        title: 'Network issue',
+        message: 'Please try placing the booking again.',
+        tone: 'warning',
+      });
     } finally {
       setIsSubmittingBooking(false);
     }
@@ -297,6 +406,7 @@ export default function Bookings({ route, navigation }) {
     resetFlow,
     service,
     severity,
+    showBookingModal,
     slot,
   ]);
 
@@ -465,6 +575,79 @@ export default function Bookings({ route, navigation }) {
 
       {/* Screen content */}
       <View style={styles.content}>{renderStep()}</View>
+
+      <Modal
+        transparent
+        visible={bookingModal.visible}
+        animationType="fade"
+        onRequestClose={handleCloseBookingModal}
+      >
+        <View style={styles.bookingModalOverlay}>
+          <Pressable style={styles.bookingModalBackdrop} onPress={handleCloseBookingModal} />
+
+          <View
+            style={[
+              styles.bookingModalCard,
+              bookingModal.tone === 'success'
+                ? styles.bookingModalCardSuccess
+                : bookingModal.tone === 'warning'
+                  ? styles.bookingModalCardWarning
+                  : styles.bookingModalCardBrand,
+            ]}
+          >
+            <View
+              style={[
+                styles.bookingModalAccent,
+                bookingModal.tone === 'success'
+                  ? styles.bookingModalAccentSuccess
+                  : bookingModal.tone === 'warning'
+                    ? styles.bookingModalAccentWarning
+                    : styles.bookingModalAccentBrand,
+              ]}
+            />
+
+            <View
+              style={[
+                styles.bookingModalIconWrap,
+                bookingModal.tone === 'success'
+                  ? styles.bookingModalIconWrapSuccess
+                  : bookingModal.tone === 'warning'
+                    ? styles.bookingModalIconWrapWarning
+                    : styles.bookingModalIconWrapBrand,
+              ]}
+            >
+              <Icon
+                name={
+                  bookingModal.tone === 'success'
+                    ? 'check-decagram-outline'
+                    : bookingModal.tone === 'warning'
+                      ? 'alert-circle-outline'
+                      : 'calendar-check-outline'
+                }
+                size={24}
+                color={
+                  bookingModal.tone === 'success'
+                    ? colors.success
+                    : bookingModal.tone === 'warning'
+                      ? '#B45309'
+                      : PROFILE_BRAND_ORANGE
+                }
+              />
+            </View>
+
+            <Text style={styles.bookingModalTitle}>{bookingModal.title}</Text>
+            <Text style={styles.bookingModalMessage}>{bookingModal.message}</Text>
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={styles.bookingModalButton}
+              onPress={handleCloseBookingModal}
+            >
+              <Text style={styles.bookingModalButtonText}>{bookingModal.ctaLabel}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       </SafeAreaView>
     </ScreenWrapper>
@@ -704,6 +887,111 @@ const createStyles = (colors) => StyleSheet.create({
   progressFill: {
     height:          2,
     backgroundColor: colors.primary,
+  },
+
+  bookingModalOverlay: {
+    flex:              1,
+    justifyContent:    'center',
+    alignItems:        'center',
+    paddingHorizontal: 24,
+  },
+  bookingModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+  },
+  bookingModalCard: {
+    width:             '100%',
+    maxWidth:          360,
+    paddingHorizontal: 22,
+    paddingTop:        30,
+    paddingBottom:     18,
+    borderRadius:      28,
+    backgroundColor:   colors.card,
+    borderWidth:       1,
+    borderColor:       colors.border,
+    alignItems:        'center',
+    shadowColor:       '#000000',
+    shadowOpacity:     0.2,
+    shadowRadius:      20,
+    shadowOffset:      { width: 0, height: 10 },
+    elevation:         8,
+  },
+  bookingModalCardBrand: {
+    backgroundColor: '#FFF4EE',
+    borderColor:     '#F6C3A7',
+  },
+  bookingModalCardSuccess: {
+    backgroundColor: '#F1FBF6',
+    borderColor:     '#B7E4C7',
+  },
+  bookingModalCardWarning: {
+    backgroundColor: '#FFF7E8',
+    borderColor:     '#F3D08B',
+  },
+  bookingModalAccent: {
+    position:         'absolute',
+    top:              0,
+    left:             0,
+    right:            0,
+    height:           8,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+  },
+  bookingModalAccentBrand: {
+    backgroundColor: PROFILE_BRAND_ORANGE,
+  },
+  bookingModalAccentSuccess: {
+    backgroundColor: colors.success,
+  },
+  bookingModalAccentWarning: {
+    backgroundColor: '#D97706',
+  },
+  bookingModalIconWrap: {
+    width:          56,
+    height:         56,
+    borderRadius:   18,
+    alignItems:     'center',
+    justifyContent: 'center',
+    marginBottom:   14,
+  },
+  bookingModalIconWrapBrand: {
+    backgroundColor: '#FFF0E8',
+  },
+  bookingModalIconWrapSuccess: {
+    backgroundColor: colors.successLight,
+  },
+  bookingModalIconWrapWarning: {
+    backgroundColor: '#FEF3C7',
+  },
+  bookingModalTitle: {
+    fontFamily: FONT.bold,
+    fontSize:   28,
+    lineHeight: 34,
+    color:      colors.ink,
+    textAlign:  'center',
+  },
+  bookingModalMessage: {
+    marginTop:  10,
+    fontFamily: FONT.regular,
+    fontSize:   16,
+    lineHeight: 24,
+    color:      colors.inkMuted,
+    textAlign:  'center',
+  },
+  bookingModalButton: {
+    marginTop:       22,
+    minWidth:        140,
+    height:          50,
+    paddingHorizontal: 22,
+    borderRadius:    16,
+    backgroundColor: PROFILE_BRAND_ORANGE,
+    alignItems:      'center',
+    justifyContent:  'center',
+  },
+  bookingModalButtonText: {
+    fontFamily: FONT.bold,
+    fontSize:   16,
+    color:      '#FFFFFF',
   },
 
   // ── Content ──────────────────────────────────────────────────

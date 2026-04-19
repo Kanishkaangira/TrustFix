@@ -6,6 +6,7 @@ const SUPABASE_URL = 'https://ehmzcpunbwgqqniydoxt.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_cwJuG02r9WaERI_R2B0FWQ_69i5RtXX';
 const AUTH_BASE_URL = `${SUPABASE_URL}/auth/v1`;
 const REST_BASE_URL = `${SUPABASE_URL}/rest/v1`;
+const FUNCTIONS_BASE_URL = `${SUPABASE_URL}/functions/v1`;
 const SESSION_STORAGE_KEY = '@trustfix/supabase/session';
 const SESSION_REFRESH_BUFFER_SECONDS = 60;
 
@@ -336,6 +337,59 @@ const restRequest = async (
   return { data: payload, error: null };
 };
 
+const invokeFunction = async (
+  functionName,
+  {
+    method = 'POST',
+    body,
+    headers = {},
+    allowUnauthenticated = false,
+  } = {},
+) => {
+  const sessionResult = allowUnauthenticated
+    ? { data: { session: null }, error: null }
+    : await getValidSession();
+
+  if (sessionResult.error) {
+    return { data: null, error: sessionResult.error };
+  }
+
+  const accessToken = sessionResult.data.session?.access_token;
+
+  if (!allowUnauthenticated && !accessToken) {
+    return {
+      data: null,
+      error: { message: 'Not authenticated.', status: 401 },
+    };
+  }
+
+  try {
+    const response = await fetch(`${FUNCTIONS_BASE_URL}/${functionName}`, {
+      method,
+      headers: createHeaders(accessToken, headers),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    const payload = await parseResponseBody(response);
+
+    if (!response.ok) {
+      return {
+        data: null,
+        error: {
+          message: parseErrorMessage(payload),
+          status: response.status,
+        },
+      };
+    }
+
+    return { data: payload, error: null };
+  } catch (_) {
+    return {
+      data: null,
+      error: { message: 'Please check your internet connection.' },
+    };
+  }
+};
+
 export const supabase = {
   auth: {
     async signInWithOtp({ phone, options = {} }) {
@@ -520,9 +574,15 @@ export const supabase = {
       });
     },
   },
+  functions: {
+    async invoke(functionName, options = {}) {
+      return invokeFunction(functionName, options);
+    },
+  },
 };
 
 export {
+  FUNCTIONS_BASE_URL,
   SESSION_STORAGE_KEY,
   SUPABASE_PUBLISHABLE_KEY,
   SUPABASE_URL,

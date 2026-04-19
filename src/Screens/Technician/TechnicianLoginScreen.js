@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Alert,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,15 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
+import {
+  getPhoneDigits,
+  toE164Phone,
+} from '../../lib/phone';
+import { supabase } from '../../lib/supabase';
+import {
+  setAuthPortal,
+  setPendingPhone,
+} from '../../state/authStore';
 import { useTechScreenTheme } from '../../technician/theme';
 import {
   TechGradientButton,
@@ -26,6 +36,45 @@ export default function TechnicianLoginScreen({ navigation }) {
     styles,
   } = useTechScreenTheme(createStyles);
   const [phone, setPhone] = useState('98765 43210');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleGetOtp = async () => {
+    const fullPhone = toE164Phone(getPhoneDigits(phone));
+
+    if (!fullPhone) {
+      Alert.alert('Enter valid mobile number', 'Please enter your technician mobile number.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setAuthPortal('technician');
+
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: fullPhone,
+        options: {
+          data: {
+            app_role: 'technician',
+          },
+        },
+      });
+
+      if (error) {
+        Alert.alert('Could not send OTP', error.message);
+        return;
+      }
+
+      setPendingPhone(fullPhone);
+      navigation.navigate('OtpVerification', {
+        phone: fullPhone,
+        appRole: 'technician',
+      });
+    } catch (_) {
+      Alert.alert('Network error', 'Please try again in a moment.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <ScreenWrapper
@@ -62,7 +111,7 @@ export default function TechnicianLoginScreen({ navigation }) {
           <View style={styles.body}>
             <Text style={styles.title}>Enter your mobile</Text>
             <Text style={styles.subtitle}>
-              This is a UI preview. No auth is connected yet.
+              Sign in with OTP to open your technician workspace.
             </Text>
 
             <View style={styles.phoneField}>
@@ -86,14 +135,14 @@ export default function TechnicianLoginScreen({ navigation }) {
                 <Icon name="shield-check-outline" size={16} color={TECH_COLORS.emerald} />
               </View>
               <Text style={styles.infoText}>
-                The login button below skips authentication and opens the technician home so
-                you can review the design flow quickly.
+                Your technician number signs in through Supabase OTP. New technicians will
+                complete one quick profile setup after verification.
               </Text>
             </View>
 
             <TechGradientButton
-              label="Continue to Technician Home"
-              onPress={() => navigation.replace('TechnicianMain')}
+              label={isSubmitting ? 'Sending OTP...' : 'Get OTP'}
+              onPress={handleGetOtp}
               style={styles.primaryAction}
             />
 

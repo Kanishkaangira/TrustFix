@@ -26,6 +26,7 @@ import { useAppTheme } from '../../theme/ThemeProvider';
 import {
   completePhoneAuth,
   getAuthState,
+  setAuthPortal,
   setPendingPhone,
 } from '../../state/authStore';
 import { syncAuthenticatedAppData } from '../../state/appDataBootstrap';
@@ -46,6 +47,8 @@ export default function OtpVerificationScreen({ navigation, route }) {
   );
   const inputRef = useRef(null);
   const routePhone = route?.params?.phone;
+  const authState = getAuthState();
+  const appRole = route?.params?.appRole || authState.currentPortal || 'customer';
   const fallbackPhone = getAuthState().pendingPhone || getAuthState().userPhone;
   const phone = String(routePhone || fallbackPhone || '').trim();
   const [otp, setOtp] = useState('');
@@ -100,6 +103,41 @@ export default function OtpVerificationScreen({ navigation, route }) {
       }
 
       const verifiedPhone = data?.user?.phone || phone;
+      setAuthPortal(appRole);
+
+      if (appRole === 'technician') {
+        const technicianResult = await supabase.db.select('technician_profiles', {
+          filters: [{ column: 'id', op: 'eq', value: data?.user?.id }],
+          maybeSingle: true,
+        });
+
+        if (technicianResult.error) {
+          Alert.alert('Technician profile check failed', technicianResult.error.message);
+          return;
+        }
+
+        const hasTechnicianName = String(
+          technicianResult.data?.display_name || '',
+        ).trim().length > 0;
+
+        completePhoneAuth(verifiedPhone);
+
+        if (!hasTechnicianName) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'NameSetup', params: { appRole: 'technician' } }],
+          });
+          return;
+        }
+
+        await syncAuthenticatedAppData();
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'TechnicianMain' }],
+        });
+        return;
+      }
+
       const profileResult = await fetchOwnProfileRecord();
 
       if (profileResult.error) {
@@ -139,6 +177,11 @@ export default function OtpVerificationScreen({ navigation, route }) {
 
       const { error } = await supabase.auth.signInWithOtp({
         phone,
+        options: {
+          data: {
+            app_role: appRole,
+          },
+        },
       });
 
       if (error) {
@@ -147,6 +190,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
       }
 
       setPendingPhone(phone);
+      setAuthPortal(appRole);
       setOtp('');
       setResendSeconds(RESEND_COOLDOWN);
       inputRef.current?.focus();

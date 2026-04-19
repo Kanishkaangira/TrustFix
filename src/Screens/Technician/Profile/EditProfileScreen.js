@@ -19,6 +19,7 @@ import {
   getTechnicianProfile,
   INITIAL_TECHNICIAN_PROFILE,
   subscribeToTechnicianProfile,
+  syncTechnicianProfileFromRemote,
   updateTechnicianProfile,
 } from '../../../technician/profileStore';
 
@@ -81,17 +82,20 @@ export default function EditProfileScreen({ navigation }) {
   );
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => subscribeToTechnicianProfile((nextProfile) => {
-    const { firstName: nextFirstName, lastName: nextLastName } = splitName(
-      nextProfile.name,
-    );
-    setFirstName(nextFirstName);
-    setLastName(nextLastName);
-    setPhone(nextProfile.phone || INITIAL_TECHNICIAN_PROFILE.phone);
-    setEmail(nextProfile.email || INITIAL_TECHNICIAN_PROFILE.email);
-    setCity(nextProfile.city || INITIAL_TECHNICIAN_PROFILE.city);
-    setServiceArea(nextProfile.serviceArea || INITIAL_TECHNICIAN_PROFILE.serviceArea);
-  }), []);
+  useEffect(() => {
+    syncTechnicianProfileFromRemote();
+    return subscribeToTechnicianProfile((nextProfile) => {
+      const { firstName: nextFirstName, lastName: nextLastName } = splitName(
+        nextProfile.name,
+      );
+      setFirstName(nextFirstName);
+      setLastName(nextLastName);
+      setPhone(nextProfile.phone || INITIAL_TECHNICIAN_PROFILE.phone);
+      setEmail(nextProfile.email || INITIAL_TECHNICIAN_PROFILE.email);
+      setCity(nextProfile.city || INITIAL_TECHNICIAN_PROFILE.city);
+      setServiceArea(nextProfile.serviceArea || INITIAL_TECHNICIAN_PROFILE.serviceArea);
+    });
+  }, []);
 
   const initials =
     [firstName, lastName]

@@ -291,7 +291,7 @@ const StatusChip = ({ meta, styles }) => (
 
 const HistoryCard = ({ record, isLast, styles, onCancelPress, isCancelling }) => {
   const statusMeta = getStatusMeta(record.status);
-  const canCancel = record.status === 'requested';
+  const canCancel = record.status === 'requested' || record.status === 'confirmed';
   const isArchived =
     record.status === 'completed' || record.status === 'cancelled';
 

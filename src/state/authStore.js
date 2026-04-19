@@ -7,6 +7,7 @@ export const INITIAL_AUTH_STATE = {
   isAuthenticated: false,
   pendingPhone: '',
   userPhone: '',
+  currentPortal: 'customer',
 };
 
 let authState = INITIAL_AUTH_STATE;
@@ -29,6 +30,7 @@ const normalizeAuthState = (nextState) => {
     isAuthenticated: !!candidate.isAuthenticated,
     pendingPhone: String(candidate.pendingPhone || '').trim(),
     userPhone: String(candidate.userPhone || '').trim(),
+    currentPortal: candidate.currentPortal === 'technician' ? 'technician' : 'customer',
   };
 };
 
@@ -90,6 +92,11 @@ export const updateAuthState = (updater) => {
 export const markOnboardingComplete = () => updateAuthState({
   hasCompletedOnboarding: true,
 });
+
+export const setAuthPortal = (portal) => updateAuthState((prev) => ({
+  ...prev,
+  currentPortal: portal === 'technician' ? 'technician' : 'customer',
+}));
 
 export const setPendingPhone = (phone) => updateAuthState((prev) => ({
   ...prev,

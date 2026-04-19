@@ -162,6 +162,11 @@ const FALLBACK_PROBLEMS_BY_SERVICE = {
 const INITIAL_CATALOG = {
   services: FALLBACK_SERVICES,
   problemsByService: FALLBACK_PROBLEMS_BY_SERVICE,
+  bookingSeverityPricing: {
+    minor: { visitCharge: 70, platformFee: 30 },
+    moderate: { visitCharge: 100, platformFee: 50 },
+    urgent: { visitCharge: 150, platformFee: 100 },
+  },
 };
 
 let catalog = INITIAL_CATALOG;
@@ -224,14 +229,35 @@ const normalizeCatalog = (nextCatalog) => {
   const nextProblemsByService = candidate.problemsByService && typeof candidate.problemsByService === 'object'
     ? candidate.problemsByService
     : INITIAL_CATALOG.problemsByService;
+  const nextBookingSeverityPricing = candidate.bookingSeverityPricing && typeof candidate.bookingSeverityPricing === 'object'
+    ? candidate.bookingSeverityPricing
+    : INITIAL_CATALOG.bookingSeverityPricing;
 
   return {
     services: nextServices,
     problemsByService: nextProblemsByService,
+    bookingSeverityPricing: nextBookingSeverityPricing,
   };
 };
 
-const buildCatalogFromRecords = (serviceRecords = [], problemRecords = []) => {
+const buildBookingSeverityPricing = (pricingRecords = []) => (
+  pricingRecords.reduce((acc, record = {}) => {
+    const severity = String(record.severity || '').trim();
+
+    if (!severity) {
+      return acc;
+    }
+
+    acc[severity] = {
+      visitCharge: Number(record.visit_charge || 0),
+      platformFee: Number(record.platform_fee || 0),
+    };
+
+    return acc;
+  }, { ...INITIAL_CATALOG.bookingSeverityPricing })
+);
+
+const buildCatalogFromRecords = (serviceRecords = [], problemRecords = [], pricingRecords = []) => {
   const normalizedProblems = problemRecords
     .filter(Boolean)
     .map(normalizeProblemRecord);
@@ -292,6 +318,7 @@ const buildCatalogFromRecords = (serviceRecords = [], problemRecords = []) => {
   return normalizeCatalog({
     services,
     problemsByService,
+    bookingSeverityPricing: buildBookingSeverityPricing(pricingRecords),
   });
 };
 
@@ -312,6 +339,8 @@ export const getServiceById = (serviceId) => (
 export const getProblemsForService = (serviceId) => (
   catalog.problemsByService[String(serviceId || '').trim()] || []
 );
+
+export const getBookingSeverityPricing = () => catalog.bookingSeverityPricing || INITIAL_CATALOG.bookingSeverityPricing;
 
 export const hydrateServiceCatalog = async () => {
   if (hasHydrated) {
@@ -350,7 +379,7 @@ export const subscribeToServiceCatalog = (listener) => {
 };
 
 export const syncServiceCatalog = async () => {
-  const [servicesResult, problemsResult] = await Promise.all([
+  const [servicesResult, problemsResult, bookingPricingResult] = await Promise.all([
     supabase.db.select('services', {
       filters: [{ column: 'is_active', op: 'eq', value: true }],
       order: [{ column: 'sort_order', ascending: true }],
@@ -362,6 +391,9 @@ export const syncServiceCatalog = async () => {
         { column: 'sort_order', ascending: true },
       ],
     }),
+    supabase.db.select('booking_severity_pricing', {
+      order: [{ column: 'sort_order', ascending: true }],
+    }),
   ]);
 
   if (servicesResult.error) {
@@ -372,14 +404,19 @@ export const syncServiceCatalog = async () => {
     return { data: catalog, error: problemsResult.error };
   }
 
+  if (bookingPricingResult.error) {
+    return { data: catalog, error: bookingPricingResult.error };
+  }
+
   catalog = buildCatalogFromRecords(
     Array.isArray(servicesResult.data) ? servicesResult.data : [],
     Array.isArray(problemsResult.data) ? problemsResult.data : [],
+    Array.isArray(bookingPricingResult.data) ? bookingPricingResult.data : [],
   );
   notify();
-  void persistCatalog(catalog);
+  persistCatalog(catalog);
 
   return { data: catalog, error: null };
 };
 
-void hydrateServiceCatalog();
+hydrateServiceCatalog();

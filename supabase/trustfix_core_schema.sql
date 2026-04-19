@@ -14,7 +14,8 @@
 -- 3. Profiles are auto-created from auth.users via trigger.
 -- 4. Service catalog tables are read-only to authenticated clients.
 -- 5. Bookings are owner-scoped with RLS and automatic status-history logging.
--- 6. allow_custom_problem and payment_status are kept for future flows.
+-- 6. Booking rows also keep technician-workflow snapshots used by dispatch,
+--    estimates, OTP verification, and payment follow-up flows.
 
 create extension if not exists pgcrypto;
 
@@ -118,6 +119,58 @@ create table if not exists public.service_problems (
     check (default_severity in ('minor', 'moderate', 'urgent'))
 );
 
+create table if not exists public.booking_severity_pricing (
+  severity text primary key,
+  visit_charge numeric(10, 2) not null default 0,
+  platform_fee numeric(10, 2) not null default 0,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint booking_severity_pricing_severity_chk
+    check (severity in ('minor', 'moderate', 'urgent')),
+  constraint booking_severity_pricing_visit_charge_chk
+    check (visit_charge >= 0),
+  constraint booking_severity_pricing_platform_fee_chk
+    check (platform_fee >= 0)
+);
+
+create table if not exists public.booking_checkout_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  address_id uuid references public.addresses(id) on delete set null,
+  service_id uuid not null references public.services(id) on delete restrict,
+  service_problem_id uuid references public.service_problems(id) on delete set null,
+  custom_problem text,
+  severity text not null,
+  scheduled_date date,
+  scheduled_slot_label text,
+  protection_selected boolean not null default false,
+  visit_charge numeric(10, 2) not null default 0,
+  platform_fee numeric(10, 2) not null default 0,
+  protection_fee numeric(10, 2) not null default 0,
+  initial_amount numeric(10, 2) not null default 0,
+  status text not null default 'created',
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint booking_checkout_sessions_problem_required_chk
+    check (
+      service_problem_id is not null
+      or nullif(btrim(custom_problem), '') is not null
+    ),
+  constraint booking_checkout_sessions_severity_chk
+    check (severity in ('minor', 'moderate', 'urgent')),
+  constraint booking_checkout_sessions_status_chk
+    check (status in ('created', 'order_created', 'paid', 'failed', 'cancelled', 'expired')),
+  constraint booking_checkout_sessions_minor_schedule_chk
+    check (
+      severity <> 'minor'
+      or (
+        scheduled_date is not null
+        and nullif(btrim(coalesce(scheduled_slot_label, '')), '') is not null
+      )
+    )
+);
+
 create table if not exists public.bookings (
   id uuid primary key default gen_random_uuid(),
   booking_number text not null unique default public.generate_booking_number(),
@@ -132,17 +185,34 @@ create table if not exists public.bookings (
   scheduled_slot_label text,
   address_label_snapshot text,
   address_snapshot text,
+  customer_name_snapshot text,
+  customer_phone_snapshot text,
   service_name_snapshot text not null,
   problem_name_snapshot text,
   visit_charge numeric(10, 2) not null default 0,
-  labour_cost numeric(10, 2) not null default 0,
-  parts_cost numeric(10, 2) not null default 0,
   urgency_surcharge numeric(10, 2) not null default 0,
   platform_fee numeric(10, 2) not null default 0,
   protection_selected boolean not null default false,
   protection_fee numeric(10, 2) not null default 0,
   estimated_total numeric(10, 2) not null default 0,
   payment_status text not null default 'pending',
+  inspection_started_at timestamptz,
+  estimate_sent_at timestamptz,
+  estimate_approved_at timestamptz,
+  work_started_at timestamptz,
+  work_completed_at timestamptz,
+  payment_requested_at timestamptz,
+  payment_completed_at timestamptz,
+  final_visit_charge numeric(10, 2) not null default 0,
+  final_labour_charge numeric(10, 2) not null default 0,
+  final_parts_charge numeric(10, 2) not null default 0,
+  final_invoice_total numeric(10, 2) not null default 0,
+  payment_gateway text,
+  gateway_order_id text,
+  gateway_payment_id text,
+  cancellation_stage text,
+  cancelled_by text,
+  cancellation_reason text,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
   constraint bookings_problem_required_chk
@@ -158,8 +228,15 @@ create table if not exists public.bookings (
         'requested',
         'confirmed',
         'assigned',
+        'accepted',
         'en_route',
+        'arrived',
+        'otp_verified',
+        'estimate_sent',
+        'estimate_approved',
         'in_progress',
+        'work_completed',
+        'payment_pending',
         'completed',
         'cancelled'
       )
@@ -168,12 +245,19 @@ create table if not exists public.bookings (
     check (
       payment_status in (
         'pending',
-        'authorized',
+        'booking_fee_pending',
+        'booking_fee_paid',
+        'payment_requested',
         'paid',
         'failed',
         'refunded',
         'waived'
       )
+    ),
+  constraint bookings_cancelled_by_chk
+    check (
+      cancelled_by is null
+      or cancelled_by in ('customer', 'technician', 'platform')
     ),
   constraint bookings_minor_schedule_chk
     check (
@@ -214,8 +298,15 @@ create table if not exists public.booking_status_history (
         'requested',
         'confirmed',
         'assigned',
+        'accepted',
         'en_route',
+        'arrived',
+        'otp_verified',
+        'estimate_sent',
+        'estimate_approved',
         'in_progress',
+        'work_completed',
+        'payment_pending',
         'completed',
         'cancelled'
       )
@@ -235,6 +326,12 @@ create index if not exists services_sort_order_idx
 
 create index if not exists service_problems_service_id_idx
   on public.service_problems(service_id);
+
+create index if not exists booking_severity_pricing_sort_order_idx
+  on public.booking_severity_pricing(sort_order);
+
+create index if not exists booking_checkout_sessions_user_id_created_at_idx
+  on public.booking_checkout_sessions(user_id, created_at desc);
 
 create index if not exists bookings_user_id_created_at_idx
   on public.bookings(user_id, created_at desc);
@@ -258,13 +355,19 @@ security definer
 set search_path = ''
 as $$
 begin
+  if coalesce(nullif(trim(new.raw_user_meta_data ->> 'app_role'), ''), 'customer') = 'technician' then
+    return new;
+  end if;
+
   insert into public.profiles (
     id,
-    phone
+    phone,
+    email
   )
   values (
     new.id,
-    new.phone
+    new.phone,
+    new.email
   )
   on conflict (id) do nothing;
 
@@ -282,6 +385,7 @@ begin
   update public.profiles
   set
     phone = new.phone,
+    email = coalesce(new.email, email),
     updated_at = timezone('utc', now())
   where id = new.id;
 
@@ -352,7 +456,9 @@ as $$
 declare
   selected_service public.services%rowtype;
   selected_problem public.service_problems%rowtype;
+  selected_booking_pricing public.booking_severity_pricing%rowtype;
   selected_address public.addresses%rowtype;
+  selected_profile public.profiles%rowtype;
 begin
   select *
   into selected_service
@@ -365,9 +471,35 @@ begin
   end if;
 
   new.service_name_snapshot = selected_service.name;
-  new.visit_charge = selected_service.base_visit_charge;
-  new.labour_cost = selected_service.base_labour_cost;
-  new.platform_fee = selected_service.platform_fee;
+  select *
+  into selected_booking_pricing
+  from public.booking_severity_pricing
+  where severity = new.severity;
+
+  if not found then
+    raise exception 'Missing severity pricing configuration.';
+  end if;
+
+  new.visit_charge = case
+    when coalesce(new.visit_charge, 0) > 0 then new.visit_charge
+    else selected_booking_pricing.visit_charge
+  end;
+  new.platform_fee = case
+    when coalesce(new.platform_fee, 0) > 0 then new.platform_fee
+    else selected_booking_pricing.platform_fee
+  end;
+
+  select *
+  into selected_profile
+  from public.profiles
+  where id = new.user_id;
+
+  if not found then
+    raise exception 'Invalid customer profile.';
+  end if;
+
+  new.customer_name_snapshot = nullif(btrim(coalesce(selected_profile.full_name, '')), '');
+  new.customer_phone_snapshot = nullif(btrim(coalesce(selected_profile.phone, '')), '');
 
   if new.service_problem_id is not null then
     select *
@@ -385,10 +517,8 @@ begin
     end if;
 
     new.problem_name_snapshot = selected_problem.name;
-    new.parts_cost = coalesce(selected_problem.estimated_parts_price, 0);
   else
     new.problem_name_snapshot = nullif(btrim(coalesce(new.custom_problem, '')), '');
-    new.parts_cost = 0;
   end if;
 
   if new.address_id is not null then
@@ -409,22 +539,15 @@ begin
     new.address_snapshot = null;
   end if;
 
-  new.urgency_surcharge = case new.severity
-    when 'moderate' then 50
-    when 'urgent' then 150
+  new.urgency_surcharge = 0;
+
+  new.protection_fee = case
+    when new.protection_selected then greatest(coalesce(new.protection_fee, 0), 19)
     else 0
   end;
 
-  if new.protection_selected then
-    new.protection_fee = 19;
-  else
-    new.protection_fee = 0;
-  end if;
-
   new.estimated_total =
     coalesce(new.visit_charge, 0)
-    + coalesce(new.labour_cost, 0)
-    + coalesce(new.parts_cost, 0)
     + coalesce(new.urgency_surcharge, 0)
     + coalesce(new.platform_fee, 0)
     + coalesce(new.protection_fee, 0);
@@ -526,6 +649,18 @@ create trigger service_problems_set_updated_at
   for each row
   execute procedure public.set_updated_at();
 
+drop trigger if exists booking_severity_pricing_set_updated_at on public.booking_severity_pricing;
+create trigger booking_severity_pricing_set_updated_at
+  before update on public.booking_severity_pricing
+  for each row
+  execute procedure public.set_updated_at();
+
+drop trigger if exists booking_checkout_sessions_set_updated_at on public.booking_checkout_sessions;
+create trigger booking_checkout_sessions_set_updated_at
+  before update on public.booking_checkout_sessions
+  for each row
+  execute procedure public.set_updated_at();
+
 drop trigger if exists bookings_set_updated_at on public.bookings;
 create trigger bookings_set_updated_at
   before update on public.bookings
@@ -560,6 +695,8 @@ alter table public.profiles enable row level security;
 alter table public.addresses enable row level security;
 alter table public.services enable row level security;
 alter table public.service_problems enable row level security;
+alter table public.booking_severity_pricing enable row level security;
+alter table public.booking_checkout_sessions enable row level security;
 alter table public.bookings enable row level security;
 alter table public.booking_status_history enable row level security;
 
@@ -567,6 +704,8 @@ revoke all on table public.profiles from anon, authenticated;
 revoke all on table public.addresses from anon, authenticated;
 revoke all on table public.services from anon, authenticated;
 revoke all on table public.service_problems from anon, authenticated;
+revoke all on table public.booking_severity_pricing from anon, authenticated;
+revoke all on table public.booking_checkout_sessions from anon, authenticated;
 revoke all on table public.bookings from anon, authenticated;
 revoke all on table public.booking_status_history from anon, authenticated;
 
@@ -574,7 +713,9 @@ grant select, insert, update on table public.profiles to authenticated;
 grant select, insert, update, delete on table public.addresses to authenticated;
 grant select on table public.services to authenticated;
 grant select on table public.service_problems to authenticated;
-grant select, insert, update on table public.bookings to authenticated;
+grant select on table public.booking_severity_pricing to authenticated;
+grant select on table public.booking_checkout_sessions to authenticated;
+grant select, update on table public.bookings to authenticated;
 grant select on table public.booking_status_history to authenticated;
 
 drop policy if exists "profiles_select_own" on public.profiles;
@@ -642,31 +783,26 @@ for select
 to authenticated
 using (is_active = true);
 
+drop policy if exists "booking_severity_pricing_select_authenticated" on public.booking_severity_pricing;
+create policy "booking_severity_pricing_select_authenticated"
+on public.booking_severity_pricing
+for select
+to authenticated
+using (true);
+
+drop policy if exists "booking_checkout_sessions_select_own" on public.booking_checkout_sessions;
+create policy "booking_checkout_sessions_select_own"
+on public.booking_checkout_sessions
+for select
+to authenticated
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
 drop policy if exists "bookings_select_own" on public.bookings;
 create policy "bookings_select_own"
 on public.bookings
 for select
 to authenticated
 using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
-
-drop policy if exists "bookings_insert_own" on public.bookings;
-create policy "bookings_insert_own"
-on public.bookings
-for insert
-to authenticated
-with check (
-  (select auth.uid()) is not null
-  and (select auth.uid()) = user_id
-  and status = 'requested'
-  and (
-    address_id is null
-    or address_id in (
-      select id
-      from public.addresses
-      where user_id = (select auth.uid())
-    )
-  )
-);
 
 drop policy if exists "bookings_update_requested_or_cancel_own" on public.bookings;
 create policy "bookings_update_requested_or_cancel_own"
@@ -676,12 +812,12 @@ to authenticated
 using (
   (select auth.uid()) is not null
   and (select auth.uid()) = user_id
-  and status = 'requested'
+  and status in ('requested', 'confirmed')
 )
 with check (
   (select auth.uid()) is not null
   and (select auth.uid()) = user_id
-  and status in ('requested', 'cancelled')
+  and status in ('requested', 'confirmed', 'cancelled')
   and (
     address_id is null
     or address_id in (
@@ -807,5 +943,22 @@ set
   estimated_parts_mrp = excluded.estimated_parts_mrp,
   estimated_parts_price = excluded.estimated_parts_price,
   is_active = excluded.is_active,
+  sort_order = excluded.sort_order,
+  updated_at = timezone('utc', now());
+
+insert into public.booking_severity_pricing (
+  severity,
+  visit_charge,
+  platform_fee,
+  sort_order
+)
+values
+  ('minor', 70, 30, 1),
+  ('moderate', 100, 50, 2),
+  ('urgent', 150, 100, 3)
+on conflict (severity) do update
+set
+  visit_charge = excluded.visit_charge,
+  platform_fee = excluded.platform_fee,
   sort_order = excluded.sort_order,
   updated_at = timezone('utc', now());

@@ -16,9 +16,14 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
+import { supabase } from '../../lib/supabase';
 import { getThemeColors } from '../../theme';
 import { useAppTheme } from '../../theme/ThemeProvider';
-import { completePhoneAuth, getAuthState } from '../../state/authStore';
+import {
+  completePhoneAuth,
+  getAuthState,
+  setAuthPortal,
+} from '../../state/authStore';
 import { syncAuthenticatedAppData } from '../../state/appDataBootstrap';
 import {
   fetchOwnProfileRecord,
@@ -27,7 +32,7 @@ import {
   updateProfile,
 } from '../../state/profileStore';
 
-export default function NameSetupScreen({ navigation }) {
+export default function NameSetupScreen({ navigation, route }) {
   const { isDark } = useAppTheme();
   const colors = getThemeColors(isDark);
   const screenBackground = isDark ? '#151B24' : '#F7F2EC';
@@ -36,6 +41,8 @@ export default function NameSetupScreen({ navigation }) {
     [colors, isDark, screenBackground],
   );
   const seededProfile = getProfile();
+  const authState = getAuthState();
+  const appRole = route?.params?.appRole || authState.currentPortal || 'customer';
   const initialName = seededProfile?.name && seededProfile.name !== 'TrustFix User'
     ? seededProfile.name
     : '';
@@ -46,23 +53,58 @@ export default function NameSetupScreen({ navigation }) {
   useEffect(() => {
     let isMounted = true;
 
-    void fetchOwnProfileRecord().then((result) => {
+    if (appRole === 'technician') {
+      supabase.auth.getUser().then(({ data, error }) => {
+        const authUserId = data?.user?.id;
+
+        if (!isMounted || error || !authUserId) {
+          return;
+        }
+
+        supabase.db.select('technician_profiles', {
+          filters: [{ column: 'id', op: 'eq', value: authUserId }],
+          maybeSingle: true,
+        }).then((technicianResult) => {
+          if (!isMounted || technicianResult.error) {
+            return;
+          }
+
+          const hasTechnicianName = String(
+            technicianResult.data?.display_name || '',
+          ).trim().length > 0;
+
+          if (technicianResult.data && hasTechnicianName) {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'TechnicianMain' }],
+            });
+          }
+        });
+      });
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    fetchOwnProfileRecord().then((result) => {
       if (!isMounted || result.error) {
         return;
       }
 
-      if (hasStoredFullName(result.data)) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        });
+      if (!hasStoredFullName(result.data)) {
+        return;
       }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
     });
 
     return () => {
       isMounted = false;
     };
-  }, [navigation]);
+  }, [appRole, navigation]);
 
   const handleContinue = async () => {
     if (trimmedName.length < 2 || isSubmitting) {
@@ -73,22 +115,59 @@ export default function NameSetupScreen({ navigation }) {
     try {
       setIsSubmitting(true);
 
-      const saveResult = await updateProfile({ name: trimmedName });
+      const currentAuthState = getAuthState();
+      const resolvedPhone = currentAuthState.userPhone || currentAuthState.pendingPhone || '';
+      setAuthPortal(appRole);
 
-      if (saveResult.error) {
-        Alert.alert('Could not save name', saveResult.error.message);
-        return;
+      if (appRole === 'technician') {
+        const { data: authUserData, error: authUserError } = await supabase.auth.getUser();
+
+        if (authUserError) {
+          Alert.alert('Could not save technician profile', authUserError.message);
+          return;
+        }
+
+        const authUser = authUserData?.user || null;
+
+        if (!authUser) {
+          Alert.alert('Session expired', 'Please sign in again to continue.');
+          return;
+        }
+
+        const technicianProfileResult = await supabase.db.upsert(
+          'technician_profiles',
+          {
+            id: authUser.id,
+            display_name: trimmedName,
+            phone: authUser.phone || resolvedPhone || null,
+            email: authUser.email || null,
+          },
+          {
+            onConflict: 'id',
+          },
+        );
+
+        if (technicianProfileResult.error) {
+          Alert.alert('Could not save technician profile', technicianProfileResult.error.message);
+          return;
+        }
+      } else {
+        const saveResult = await updateProfile({ name: trimmedName });
+
+        if (saveResult.error) {
+          Alert.alert('Could not save name', saveResult.error.message);
+          return;
+        }
       }
-
-      const authState = getAuthState();
-      const resolvedPhone = authState.userPhone || authState.pendingPhone || '';
 
       completePhoneAuth(resolvedPhone);
       await syncAuthenticatedAppData();
 
       navigation.reset({
         index: 0,
-        routes: [{ name: 'Main' }],
+        routes: [{
+          name: appRole === 'technician' ? 'TechnicianMain' : 'Main',
+        }],
       });
     } catch (_) {
       Alert.alert('Network error', 'Please try saving your name again.');
@@ -130,7 +209,9 @@ export default function NameSetupScreen({ navigation }) {
 
             <View style={styles.content}>
               <Text style={styles.title}>What should we call you?</Text>
-              <Text style={styles.subtitle}>Your name will be saved to your TrustFix profile.</Text>
+              <Text style={styles.subtitle}>
+                Your name will be saved to your {appRole === 'technician' ? 'technician' : 'TrustFix'} profile.
+              </Text>
 
               <View style={styles.nameField}>
                 <TextInput

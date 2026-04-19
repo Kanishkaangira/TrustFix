@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -10,7 +12,10 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
-import { getTechnicianJobFlow } from '../../technician/jobFlowData';
+import {
+  acceptTechnicianJob,
+  fetchTechnicianAssignments,
+} from '../../technician/jobAssignmentEngine';
 import { useTechScreenTheme } from '../../technician/theme';
 import {
   TechBadge,
@@ -20,110 +25,12 @@ import {
 
 const JOB_TABS = ['Active', 'Upcoming', 'Completed'];
 
-const createJobCard = ({
-  id,
-  service,
-  issue,
-  area,
-  slot,
-  amountText,
-  status,
-  statusTone,
-  type,
-  icon,
-  iconBg,
-  paymentDone = false,
-}) => ({
-  id,
-  title: service,
-  issue,
-  area,
-  slot,
-  visitText: amountText,
-  status,
-  statusTone,
-  type,
-  icon,
-  iconBg,
-  paymentDone,
-});
-
-const jobAc = getTechnicianJobFlow('job-ac');
-const jobElectric = getTechnicianJobFlow('job-electric');
-const jobPlumbing = getTechnicianJobFlow('job-plumbing');
-
-const JOBS_BY_TAB = {
-  Active: [
-    createJobCard({
-      id: jobAc.id,
-      service: jobAc.service,
-      issue: jobAc.issue,
-      area: jobAc.location.area,
-      slot: jobAc.scheduledSlot,
-      amountText: 'Accepted service',
-      status: 'In Progress',
-      statusTone: 'emerald',
-      type: 'Accepted',
-      icon: jobAc.serviceIcon,
-      iconBg: jobAc.serviceTone,
-    }),
-    createJobCard({
-      id: jobElectric.id,
-      service: jobElectric.service,
-      issue: jobElectric.issue,
-      area: jobElectric.location.area,
-      slot: jobElectric.scheduledSlot,
-      amountText: 'Accepted service',
-      status: 'En Route',
-      statusTone: 'amber',
-      type: 'Accepted',
-      icon: jobElectric.serviceIcon,
-      iconBg: jobElectric.serviceTone,
-    }),
-  ],
-  Upcoming: [
-    createJobCard({
-      id: jobPlumbing.id,
-      service: jobPlumbing.service,
-      issue: jobPlumbing.issue,
-      area: jobPlumbing.location.area,
-      slot: jobPlumbing.scheduledSlot,
-      amountText: 'Waiting for acceptance',
-      status: 'New',
-      statusTone: 'sky',
-      type: 'New request',
-      icon: jobPlumbing.serviceIcon,
-      iconBg: jobPlumbing.serviceTone,
-    }),
-  ],
-  Completed: [
-    createJobCard({
-      id: jobAc.id,
-      service: jobAc.service,
-      issue: jobAc.issue,
-      area: jobAc.location.area,
-      slot: 'Yesterday, 2:00 PM - 4:00 PM',
-      amountText: 'Customer total recorded',
-      status: 'Completed',
-      statusTone: 'emerald',
-      type: 'Past service',
-      icon: jobAc.serviceIcon,
-      iconBg: jobAc.serviceTone,
-      paymentDone: false,
-    }),
-  ],
-};
-
-const getJobsForTab = (activeTab) => {
-  return JOBS_BY_TAB[activeTab] || JOBS_BY_TAB.Active;
-};
-
 const getSecondaryAction = (activeTab, job) => {
   if (activeTab === 'Completed' && job.paymentDone) {
     return {
       label: 'Receipt',
       icon: 'file-document-outline',
-      onPressRoute: 'TechnicianJobCompletion',
+      route: 'TechnicianJobCompletion',
     };
   }
 
@@ -131,22 +38,22 @@ const getSecondaryAction = (activeTab, job) => {
     return {
       label: 'Review',
       icon: 'file-search-outline',
-      onPressRoute: 'TechnicianJobDetail',
+      route: 'TechnicianJobDetail',
     };
   }
 
   if (job.status === 'En Route') {
     return {
-      label: 'Route',
-      icon: 'map-marker-path',
-      onPressRoute: 'TechnicianEnRoute',
+      label: 'Call',
+      icon: 'phone-outline',
+      route: 'TechnicianJobDetail',
     };
   }
 
   return {
     label: 'Call',
     icon: 'phone-outline',
-    onPressRoute: 'TechnicianJobDetail',
+    route: 'TechnicianJobDetail',
   };
 };
 
@@ -164,7 +71,7 @@ const getPrimaryAction = (activeTab, job) => {
 
   if (activeTab === 'Upcoming') {
     return {
-      label: 'Review Job',
+      label: 'Accept Job',
       route: 'TechnicianJobDetail',
     };
   }
@@ -196,12 +103,45 @@ export default function TechnicianJobsScreen({ navigation }) {
     styles,
   } = useTechScreenTheme(createStyles);
   const [activeTab, setActiveTab] = useState('Active');
+  const [jobsByTab, setJobsByTab] = useState({
+    Active: [],
+    Upcoming: [],
+    Completed: [],
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [acceptingBookingId, setAcceptingBookingId] = useState('');
 
-  const list = getJobsForTab(activeTab);
+  const loadAssignments = async (options = {}) => {
+    const useRefreshingState = options.refreshing === true;
+
+    if (useRefreshingState) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+
+    const result = await fetchTechnicianAssignments();
+
+    if (result.error) {
+      Alert.alert('Could not load jobs', result.error.message);
+    } else if (result.data) {
+      setJobsByTab(result.data);
+    }
+
+    setIsLoading(false);
+    setIsRefreshing(false);
+  };
+
+  useEffect(() => {
+    loadAssignments();
+  }, []);
+
+  const list = jobsByTab[activeTab] || [];
   const tabCounts = {
-    Active: JOBS_BY_TAB.Active.length,
-    Upcoming: JOBS_BY_TAB.Upcoming.length,
-    Completed: JOBS_BY_TAB.Completed.length,
+    Active: jobsByTab.Active.length,
+    Upcoming: jobsByTab.Upcoming.length,
+    Completed: jobsByTab.Completed.length,
   };
 
   return (
@@ -225,13 +165,17 @@ export default function TechnicianJobsScreen({ navigation }) {
               <TouchableOpacity
                 activeOpacity={0.88}
                 style={styles.headerIconButton}
-                onPress={() => navigation.navigate('TechnicianJobAlert')}
+                onPress={() => loadAssignments({ refreshing: true })}
               >
-                <Icon
-                  name="bell-ring-outline"
-                  size={20}
-                  color={TECH_COLORS.text}
-                />
+                {isRefreshing ? (
+                  <ActivityIndicator color={TECH_COLORS.text} size="small" />
+                ) : (
+                  <Icon
+                    name="refresh"
+                    size={20}
+                    color={TECH_COLORS.text}
+                  />
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -285,11 +229,41 @@ export default function TechnicianJobsScreen({ navigation }) {
             </Text>
           </View>
 
-          {list.map((job, index) => {
+          {isLoading ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator color={TECH_COLORS.coral} />
+              <Text style={styles.emptyTitle}>Loading technician jobs</Text>
+              <Text style={styles.emptyText}>
+                Pulling the latest assignments from TrustFix.
+              </Text>
+            </View>
+          ) : null}
+
+          {!isLoading && !list.length ? (
+            <View style={styles.emptyState}>
+              <Icon
+                name={activeTab === 'Upcoming' ? 'bell-outline' : 'briefcase-outline'}
+                size={28}
+                color={TECH_COLORS.textMuted}
+              />
+              <Text style={styles.emptyTitle}>
+                {activeTab === 'Upcoming' ? 'No new requests yet' : 'No jobs here right now'}
+              </Text>
+              <Text style={styles.emptyText}>
+                {activeTab === 'Upcoming'
+                  ? 'Turn Availability on from the home screen to receive new nearby bookings.'
+                  : 'This tab will update automatically as your booking assignments move forward.'}
+              </Text>
+            </View>
+          ) : null}
+
+          {!isLoading && list.map((job, index) => {
             const highlighted = activeTab === 'Active' && index === 0;
             const secondaryAction = getSecondaryAction(activeTab, job);
             const primaryAction = getPrimaryAction(activeTab, job);
             const showSingleCompletedAction = activeTab === 'Completed';
+            const showSingleActiveAction = activeTab === 'Active' && job.status === 'In Progress';
+            const isAcceptingThisJob = acceptingBookingId === job.bookingId;
 
             return (
               <TechCard
@@ -342,8 +316,8 @@ export default function TechnicianJobsScreen({ navigation }) {
                         styles.singleActionButton,
                       ]}
                       onPress={() => navigation.navigate(
-                        job.paymentDone ? secondaryAction.onPressRoute : primaryAction.route,
-                        { jobId: job.id },
+                        job.paymentDone ? secondaryAction.route : primaryAction.route,
+                        { jobId: job.bookingId },
                       )}
                     >
                       <Text style={styles.actionPrimaryText}>
@@ -351,12 +325,25 @@ export default function TechnicianJobsScreen({ navigation }) {
                       </Text>
                       <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />
                     </TouchableOpacity>
+                  ) : showSingleActiveAction ? (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      style={[
+                        styles.actionButtonPrimary,
+                        styles.singleActionButton,
+                        highlighted && styles.actionButtonPrimaryHighlighted,
+                      ]}
+                      onPress={() => navigation.navigate(primaryAction.route, { jobId: job.bookingId })}
+                    >
+                      <Text style={styles.actionPrimaryText}>{primaryAction.label}</Text>
+                      <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />
+                    </TouchableOpacity>
                   ) : (
                     <>
                       <TouchableOpacity
                         activeOpacity={0.86}
                         style={styles.actionButtonMuted}
-                        onPress={() => navigation.navigate(secondaryAction.onPressRoute, { jobId: job.id })}
+                        onPress={() => navigation.navigate(secondaryAction.route, { jobId: job.bookingId })}
                       >
                         <Icon
                           name={secondaryAction.icon}
@@ -372,10 +359,44 @@ export default function TechnicianJobsScreen({ navigation }) {
                           styles.actionButtonPrimary,
                           highlighted && styles.actionButtonPrimaryHighlighted,
                         ]}
-                        onPress={() => navigation.navigate(primaryAction.route, { jobId: job.id })}
+                        disabled={activeTab === 'Upcoming' && isAcceptingThisJob}
+                        onPress={async () => {
+                          if (activeTab !== 'Upcoming') {
+                            navigation.navigate(primaryAction.route, { jobId: job.bookingId });
+                            return;
+                          }
+
+                          setAcceptingBookingId(job.bookingId);
+                          const result = await acceptTechnicianJob(job.bookingId);
+                          setAcceptingBookingId('');
+
+                          if (result.error) {
+                            Alert.alert('Could not accept job', result.error.message);
+                            await loadAssignments({ refreshing: true });
+                            return;
+                          }
+
+                          if (!result.data?.success) {
+                            Alert.alert(
+                              'Job already taken',
+                              result.data?.message || 'Another technician accepted this job first.',
+                            );
+                            await loadAssignments({ refreshing: true });
+                            return;
+                          }
+
+                          await loadAssignments({ refreshing: true });
+                          setActiveTab('Active');
+                        }}
                       >
-                        <Text style={styles.actionPrimaryText}>{primaryAction.label}</Text>
-                        <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />
+                        {activeTab === 'Upcoming' && isAcceptingThisJob ? (
+                          <ActivityIndicator color={TECH_COLORS.white} size="small" />
+                        ) : (
+                          <>
+                            <Text style={styles.actionPrimaryText}>{primaryAction.label}</Text>
+                            <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />
+                          </>
+                        )}
                       </TouchableOpacity>
                     </>
                   )}
@@ -403,46 +424,46 @@ const createStyles = ({
     flex: 1,
     backgroundColor: TECH_COLORS.bg,
   },
-    content: {
-      paddingBottom: 120,
-    },
-    topSection: {
-      paddingHorizontal: 20,
-      paddingTop: 14,
-    },
-    headerRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-      gap: 14,
-    },
-    headerCopy: {
-      flex: 1,
-    },
-    headerTitle: {
-      fontSize: 28,
-      lineHeight: 32,
-      fontWeight: '900',
-      color: TECH_COLORS.text,
-      letterSpacing: -0.7,
-    },
-    headerIconButton: {
-      width: 42,
-      height: 42,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: TECH_COLORS.card,
-      borderWidth: 1,
-      borderColor: TECH_COLORS.border,
-      ...TECH_SHADOWS.card,
-    },
-    tabsShell: {
-      paddingHorizontal: 20,
-      marginTop: 12,
-    },
-    tabsRow: {
-      flexDirection: 'row',
+  content: {
+    paddingBottom: 120,
+  },
+  topSection: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
+  headerCopy: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '900',
+    color: TECH_COLORS.text,
+    letterSpacing: -0.7,
+  },
+  headerIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TECH_COLORS.card,
+    borderWidth: 1,
+    borderColor: TECH_COLORS.border,
+    ...TECH_SHADOWS.card,
+  },
+  tabsShell: {
+    paddingHorizontal: 20,
+    marginTop: 12,
+  },
+  tabsRow: {
+    flexDirection: 'row',
     backgroundColor: TECH_COLORS.card,
     borderRadius: 20,
     borderWidth: 1,
@@ -459,19 +480,19 @@ const createStyles = ({
     flexDirection: 'row',
     gap: 6,
   },
-    tabButtonActive: {
-      backgroundColor: isDark ? TECH_COLORS.float : TECH_COLORS.cardAlt,
-      borderWidth: 1,
-      borderColor: TECH_COLORS.borderStrong,
-    },
+  tabButtonActive: {
+    backgroundColor: isDark ? TECH_COLORS.float : TECH_COLORS.cardAlt,
+    borderWidth: 1,
+    borderColor: TECH_COLORS.borderStrong,
+  },
   tabText: {
     fontSize: 12,
     fontWeight: '700',
     color: TECH_COLORS.textMuted,
   },
-    tabTextActive: {
-      color: TECH_COLORS.text,
-    },
+  tabTextActive: {
+    color: TECH_COLORS.text,
+  },
   tabCountPill: {
     minWidth: 22,
     height: 22,
@@ -481,17 +502,17 @@ const createStyles = ({
     paddingHorizontal: 6,
     backgroundColor: TECH_COLORS.float,
   },
-    tabCountPillActive: {
-      backgroundColor: TECH_COLORS.coralTint,
-    },
+  tabCountPillActive: {
+    backgroundColor: TECH_COLORS.coralTint,
+  },
   tabCountText: {
     fontSize: 10,
     fontWeight: '800',
     color: TECH_COLORS.textSecondary,
   },
-    tabCountTextActive: {
-      color: TECH_COLORS.coral,
-    },
+  tabCountTextActive: {
+    color: TECH_COLORS.coral,
+  },
   sectionHeader: {
     marginHorizontal: 20,
     marginTop: 16,
@@ -510,6 +531,28 @@ const createStyles = ({
     fontSize: 12,
     fontWeight: '700',
     color: TECH_COLORS.coral,
+  },
+  emptyState: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 18,
+    borderRadius: TECH_RADIUS.lg,
+    borderWidth: 1,
+    borderColor: TECH_COLORS.border,
+    backgroundColor: TECH_COLORS.card,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: TECH_COLORS.text,
+  },
+  emptyText: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    color: TECH_COLORS.textSecondary,
   },
   jobCard: {
     marginHorizontal: 20,

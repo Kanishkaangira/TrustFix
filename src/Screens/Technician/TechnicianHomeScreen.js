@@ -19,6 +19,8 @@ import {
 import {
   getTechnicianProfile,
   subscribeToTechnicianProfile,
+  syncTechnicianProfileFromRemote,
+  updateTechnicianAvailability,
 } from '../../technician/profileStore';
 import { useTechScreenTheme } from '../../technician/theme';
 import {
@@ -36,10 +38,15 @@ export default function TechnicianHomeScreen({ navigation }) {
     isDark,
     styles,
   } = useTechScreenTheme(createStyles);
-  const [isOnline, setIsOnline] = useState(true);
+  const [isUpdatingAvailability, setIsUpdatingAvailability] = useState(false);
   const [profile, setProfile] = useState(() => getTechnicianProfile());
 
-  useEffect(() => subscribeToTechnicianProfile(setProfile), []);
+  useEffect(() => {
+    syncTechnicianProfileFromRemote();
+    return subscribeToTechnicianProfile(setProfile);
+  }, []);
+
+  const isOnline = Boolean(profile.isAvailable);
 
   const handleNavigate = routeName => {
     navigation.navigate(routeName);
@@ -207,9 +214,18 @@ export default function TechnicianHomeScreen({ navigation }) {
             </View>
             <Switch
               value={isOnline}
-              onValueChange={setIsOnline}
+              onValueChange={async (nextValue) => {
+                if (isUpdatingAvailability) {
+                  return;
+                }
+
+                setIsUpdatingAvailability(true);
+                await updateTechnicianAvailability(nextValue);
+                setIsUpdatingAvailability(false);
+              }}
               trackColor={{ false: TECH_COLORS.float, true: TECH_COLORS.emerald }}
               thumbColor={TECH_COLORS.white}
+              disabled={isUpdatingAvailability}
             />
           </TechCard>
 

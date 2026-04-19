@@ -12,7 +12,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { FONT, RADIUS, SHADOW, SPACING, getThemeColors } from '../../../theme';
+import { getSeverityPricing } from '../../../lib/pricing/bookingPricing';
 import { useAppTheme } from '../../../theme/ThemeProvider';
+import {
+  getBookingSeverityPricing,
+  subscribeToServiceCatalog,
+} from '../../../state/serviceStore';
 
 const BRAND_ORANGE = '#FF6B2B';
 const BRAND_SOFT = '#FFF0E8';
@@ -107,14 +112,20 @@ export default function PriceSummary({
   const severityMetaMap = useMemo(() => createSeverityMeta(colors), [colors]);
   const { bottom } = useSafeAreaInsets();
   const [repairProtection, setRepairProtection] = useState(true);
+  const [bookingPricingMatrix, setBookingPricingMatrix] = useState(() => getBookingSeverityPricing());
   const scrollBottomPadding = bottom + 108;
 
+  React.useEffect(() => subscribeToServiceCatalog((nextCatalog) => {
+    setBookingPricingMatrix(nextCatalog.bookingSeverityPricing || getBookingSeverityPricing());
+  }), []);
+
   const pricing = useMemo(() => ({
-    visitCharge: Number(service?.baseVisitCharge || 149),
-    platformFee: Number(service?.platformFee || 49),
-  }), [service?.baseVisitCharge, service?.platformFee]);
-  const urgencySurcharge = severity === 'urgent' ? 150 : severity === 'moderate' ? 50 : 0;
-  const visitCharge = pricing.visitCharge + urgencySurcharge;
+    ...getSeverityPricing({
+      severity,
+      pricingMatrix: bookingPricingMatrix,
+    }),
+  }), [bookingPricingMatrix, severity]);
+  const visitCharge = pricing.visitCharge;
   const severityMeta = severityMetaMap[severity] || severityMetaMap.minor;
   const displayProblem = customProblem || problem?.label || 'General service';
   const serviceAccent = service?.accentColor || BRAND_ORANGE;

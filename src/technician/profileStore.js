@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { formatDisplayPhone } from '../lib/phone';
+import { supabase } from '../lib/supabase';
 import { technicianProfile as seedProfile } from './mockData';
 
 const PROFILE_STORAGE_KEY = '@trustfix/technician-profile';
@@ -18,6 +20,7 @@ export const INITIAL_TECHNICIAN_PROFILE = {
   jobsDone: seedProfile.jobsDone,
   completionRate: seedProfile.completionRate,
   onPlatform: seedProfile.onPlatform,
+  isAvailable: false,
 };
 
 export const INITIAL_TECHNICIAN_ADDRESSES = [
@@ -77,8 +80,44 @@ const normalizeProfile = (nextProfile) => {
     jobsDone: String(candidate.jobsDone || '').trim() || INITIAL_TECHNICIAN_PROFILE.jobsDone,
     completionRate: String(candidate.completionRate || '').trim() || INITIAL_TECHNICIAN_PROFILE.completionRate,
     onPlatform: String(candidate.onPlatform || '').trim() || INITIAL_TECHNICIAN_PROFILE.onPlatform,
+    isAvailable: Boolean(candidate.isAvailable),
   };
 };
+
+const getAuthenticatedUser = async () => {
+  const { data, error } = await supabase.auth.getUser();
+
+  if (error) {
+    return { user: null, error };
+  }
+
+  return { user: data?.user || null, error: null };
+};
+
+const mapTechnicianProfileRecordToUi = ({
+  technicianProfile: profileRecord = {},
+  subscription = null,
+  plan = null,
+}) => ({
+  name: String(profileRecord.display_name || '').trim() || INITIAL_TECHNICIAN_PROFILE.name,
+  phone: formatDisplayPhone(profileRecord.phone) || INITIAL_TECHNICIAN_PROFILE.phone,
+  email: String(profileRecord.email || '').trim(),
+  plan: plan?.name ? `${plan.name} Plan` : INITIAL_TECHNICIAN_PROFILE.plan,
+  planMeta: subscription?.current_period_end
+    ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+    })}`
+    : INITIAL_TECHNICIAN_PROFILE.planMeta,
+  city: String(profileRecord.city || '').trim() || INITIAL_TECHNICIAN_PROFILE.city,
+  pincode: INITIAL_TECHNICIAN_PROFILE.pincode,
+  serviceArea: String(profileRecord.service_area_summary || '').trim() || INITIAL_TECHNICIAN_PROFILE.serviceArea,
+  rating: String(profileRecord.rating ?? '').trim() || INITIAL_TECHNICIAN_PROFILE.rating,
+  jobsDone: String(profileRecord.completed_jobs_count ?? '').trim() || INITIAL_TECHNICIAN_PROFILE.jobsDone,
+  completionRate: INITIAL_TECHNICIAN_PROFILE.completionRate,
+  onPlatform: INITIAL_TECHNICIAN_PROFILE.onPlatform,
+  isAvailable: Boolean(profileRecord.is_available),
+});
 
 const buildAddressLine = ({
   addressLine1,
@@ -181,12 +220,55 @@ export const subscribeToTechnicianProfile = (listener) => {
 };
 
 export const updateTechnicianProfile = async (updater) => {
-  const nextProfile = typeof updater === 'function'
-    ? updater(technicianProfile)
-    : { ...technicianProfile, ...updater };
+  try {
+    const nextProfile = typeof updater === 'function'
+      ? updater(technicianProfile)
+      : { ...technicianProfile, ...updater };
 
-  applyProfile(nextProfile);
-  return { data: technicianProfile, error: null };
+    const previousProfile = technicianProfile;
+    const normalizedProfile = normalizeProfile(nextProfile);
+
+    applyProfile(normalizedProfile);
+
+    const { user, error: userError } = await getAuthenticatedUser();
+
+    if (userError) {
+      applyProfile(previousProfile);
+      return { data: previousProfile, error: userError };
+    }
+
+    if (!user) {
+      return { data: normalizedProfile, error: null };
+    }
+
+    const result = await supabase.db.upsert('technician_profiles', {
+      id: user.id,
+      display_name: normalizedProfile.name,
+      phone: user.phone || normalizedProfile.phone || null,
+      email: normalizedProfile.email || null,
+      city: normalizedProfile.city || null,
+      service_area_summary: normalizedProfile.serviceArea || null,
+      is_available: normalizedProfile.isAvailable,
+    }, {
+      onConflict: 'id',
+    });
+
+    if (result.error) {
+      applyProfile(previousProfile);
+      return { data: previousProfile, error: result.error };
+    }
+
+    return syncTechnicianProfileFromRemote();
+  } catch (_) {
+    return { data: technicianProfile, error: { message: 'Please check your internet connection.' } };
+  }
+};
+
+export const updateTechnicianAvailability = async (nextValue) => {
+  return updateTechnicianProfile((prev) => ({
+    ...prev,
+    isAvailable: Boolean(nextValue),
+  }));
 };
 
 export const getTechnicianAddresses = () => technicianAddresses;
@@ -275,6 +357,85 @@ export const hydrateTechnicianProfileStore = async () => {
     });
 
   return hydrationPromise;
+};
+
+export const syncTechnicianProfileFromRemote = async () => {
+  try {
+    const { user, error: userError } = await getAuthenticatedUser();
+
+    if (userError) {
+      return { data: technicianProfile, error: userError };
+    }
+
+    if (!user) {
+      return { data: technicianProfile, error: null };
+    }
+
+    const profileResult = await supabase.db.select('technician_profiles', {
+      filters: [{ column: 'id', op: 'eq', value: user.id }],
+      maybeSingle: true,
+    });
+
+    if (profileResult.error) {
+      return { data: technicianProfile, error: profileResult.error };
+    }
+
+    const subscriptionResult = await supabase.db.select('technician_subscriptions', {
+      filters: [
+        { column: 'technician_id', op: 'eq', value: user.id },
+        { column: 'status', op: 'eq', value: 'active' },
+      ],
+      order: [{ column: 'current_period_start', ascending: false }],
+      maybeSingle: true,
+    });
+
+    if (subscriptionResult.error) {
+      return { data: technicianProfile, error: subscriptionResult.error };
+    }
+
+    let plan = null;
+    const planCode = subscriptionResult.data?.plan_code;
+
+    if (planCode) {
+      const planResult = await supabase.db.select('subscription_plans', {
+        filters: [{ column: 'code', op: 'eq', value: planCode }],
+        maybeSingle: true,
+      });
+
+      if (planResult.error) {
+        return { data: technicianProfile, error: planResult.error };
+      }
+
+      plan = planResult.data || null;
+    }
+
+    const nextProfile = normalizeProfile(mapTechnicianProfileRecordToUi({
+      technicianProfile: profileResult.data || {},
+      subscription: subscriptionResult.data || null,
+      plan,
+    }));
+
+    applyProfile(nextProfile);
+    return { data: nextProfile, error: null };
+  } catch (_) {
+    return { data: technicianProfile, error: { message: 'Please check your internet connection.' } };
+  }
+};
+
+export const resetTechnicianProfileStore = async () => {
+  technicianProfile = INITIAL_TECHNICIAN_PROFILE;
+  technicianAddresses = INITIAL_TECHNICIAN_ADDRESSES;
+  notifyProfile();
+  notifyAddresses();
+
+  try {
+    await AsyncStorage.multiRemove([PROFILE_STORAGE_KEY, ADDRESS_STORAGE_KEY]);
+  } catch (_) {}
+
+  return {
+    profile: technicianProfile,
+    addresses: technicianAddresses,
+  };
 };
 
 hydrateTechnicianProfileStore();

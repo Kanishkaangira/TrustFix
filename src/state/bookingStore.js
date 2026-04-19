@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { supabase } from '../lib/supabase';
+import { initializeBookingFeePayment } from '../lib/payments/razorpay';
 
 const STORAGE_KEY = '@trustfix/bookings';
 const INITIAL_BOOKINGS = [];
@@ -28,6 +29,10 @@ const normalizeBookingRecord = (record = {}) => ({
   severity: String(record.severity || '').trim(),
   estimatedTotal: Number(record.estimated_total || 0),
   estimatedTotalLabel: formatCurrency(record.estimated_total || 0),
+  paymentStatus: String(record.payment_status || '').trim() || 'pending',
+  visitCharge: Number(record.visit_charge || 0),
+  platformFee: Number(record.platform_fee || 0),
+  protectionFee: Number(record.protection_fee || 0),
   addressLabel: String(record.address_label_snapshot || '').trim(),
   address: String(record.address_snapshot || '').trim(),
   scheduledDate: record.scheduled_date || null,
@@ -55,7 +60,7 @@ const persistBookings = async (nextBookings) => {
 const applyBookings = (nextBookings) => {
   bookings = normalizeBookings(nextBookings);
   notify();
-  void persistBookings(bookings);
+  persistBookings(bookings);
   return bookings;
 };
 
@@ -69,7 +74,7 @@ const getAuthenticatedUser = async () => {
   return { user: data?.user || null, error: null };
 };
 
-const buildBookingPayload = ({
+const buildBookingDraftPayload = ({
   userId,
   service,
   problem,
@@ -196,9 +201,12 @@ export const createBooking = async ({
       };
     }
 
-    const result = await supabase.db.insert(
-      'bookings',
-      buildBookingPayload({
+    let paymentOrder = null;
+    let paymentSession = null;
+    let paymentSetupError = null;
+
+    const paymentOrderResult = await initializeBookingFeePayment({
+      bookingDraft: buildBookingDraftPayload({
         userId: user.id,
         service,
         problem,
@@ -209,19 +217,22 @@ export const createBooking = async ({
         address,
         protectionSelected,
       }),
-      {
-        single: true,
-      },
-    );
+    });
 
-    if (result.error) {
-      return { data: null, error: result.error };
+    if (paymentOrderResult.error) {
+      paymentSetupError = paymentOrderResult.error;
+    } else {
+      paymentSession = paymentOrderResult.data || null;
+      paymentOrder = paymentOrderResult.data?.paymentOrder || paymentOrderResult.data || null;
     }
 
-    const nextBooking = normalizeBookingRecord(result.data);
-    applyBookings([nextBooking, ...bookings.filter((item) => item.id !== nextBooking.id)]);
-
-    return { data: nextBooking, error: null };
+    return {
+      data: null,
+      error: null,
+      paymentOrder,
+      paymentSession,
+      paymentSetupError,
+    };
   } catch (_) {
     return { data: null, error: { message: 'Please check your internet connection.' } };
   }
@@ -288,4 +299,4 @@ export const resetBookingStore = async () => {
   return bookings;
 };
 
-void hydrateBookings();
+hydrateBookings();

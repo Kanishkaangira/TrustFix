@@ -89,6 +89,7 @@ export const fetchOwnProfileRecord = async () => {
       {
         id: user.id,
         phone: user.phone || null,
+        email: user.email || null,
       },
       {
         onConflict: 'id',
@@ -215,6 +216,7 @@ export const updateProfile = async (updater) => {
       {
         id: user.id,
         phone: user.phone || null,
+        email: user.email || null,
         ...payload,
       },
       {

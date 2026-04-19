@@ -1,15 +1,28 @@
 import { resetAddressStore, syncAddressesFromRemote } from './addressStore';
+import { getAuthState } from './authStore';
 import { resetBookingStore, syncBookingsFromRemote } from './bookingStore';
 import { resetProfileStore, syncProfileFromRemote } from './profileStore';
 import { syncServiceCatalog } from './serviceStore';
+import {
+  resetTechnicianProfileStore,
+  syncTechnicianProfileFromRemote,
+} from '../technician/profileStore';
 
 export const syncAuthenticatedAppData = async () => {
-  const results = await Promise.allSettled([
-    syncProfileFromRemote(),
-    syncAddressesFromRemote(),
-    syncServiceCatalog(),
-    syncBookingsFromRemote(),
-  ]);
+  const isTechnicianPortal = getAuthState().currentPortal === 'technician';
+  const tasks = isTechnicianPortal
+    ? [
+        syncTechnicianProfileFromRemote(),
+        syncServiceCatalog(),
+      ]
+    : [
+        syncProfileFromRemote(),
+        syncAddressesFromRemote(),
+        syncServiceCatalog(),
+        syncBookingsFromRemote(),
+      ];
+
+  const results = await Promise.allSettled(tasks);
 
   const firstFailure = results.find(
     (result) => result.status === 'fulfilled' && result.value?.error,
@@ -22,9 +35,14 @@ export const syncAuthenticatedAppData = async () => {
 };
 
 export const resetAuthenticatedAppData = async () => {
-  await Promise.allSettled([
-    resetProfileStore(),
-    resetAddressStore(),
-    resetBookingStore(),
-  ]);
+  const isTechnicianPortal = getAuthState().currentPortal === 'technician';
+  const tasks = isTechnicianPortal
+    ? [resetTechnicianProfileStore()]
+    : [
+        resetProfileStore(),
+        resetAddressStore(),
+        resetBookingStore(),
+      ];
+
+  await Promise.allSettled(tasks);
 };
