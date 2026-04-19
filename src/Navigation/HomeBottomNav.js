@@ -11,10 +11,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import Home from '../Screens/Home';
-import Profile from '../Screens/Profile';
-import Booking from '../Screens/Booking';
-import ServiceLedger from '../Screens/ServiceLedger';
+import Home from '../Screens/Customer/Home';
+import Profile from '../Screens/Customer/Profile';
+import Booking from '../Screens/Customer/Booking';
+import ServiceLedger from '../Screens/Customer/ServiceLedger';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { getThemeColors } from '../theme';
 

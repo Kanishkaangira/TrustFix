@@ -7,14 +7,16 @@ import React from 'react';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import FlashScreen      from '../Screens/FlashScreen';
-import OnboardingScreen from '../Screens/OnboardingScreen';
-import AuthPhoneScreen  from '../Screens/AuthPhoneScreen';
-import OtpVerificationScreen from '../Screens/OtpVerificationScreen';
-import NameSetupScreen from '../Screens/NameSetupScreen';
-import SearchScreen     from '../Screens/SearchScreen';
-import AiChat from '../Screens/AiChat';
+import FlashScreen      from '../Screens/Customer/FlashScreen';
+import OnboardingScreen from '../Screens/Customer/OnboardingScreen';
+import AuthPhoneScreen  from '../Screens/Customer/AuthPhoneScreen';
+import OtpVerificationScreen from '../Screens/Customer/OtpVerificationScreen';
+import NameSetupScreen from '../Screens/Customer/NameSetupScreen';
+import TechnicianLoginScreen from '../Screens/Technician/TechnicianLoginScreen';
+import SearchScreen     from '../Screens/Customer/SearchScreen';
+import AiChat from '../Screens/Customer/AiChat';
 import HomeBottomNav    from './HomeBottomNav';
+import TechnicianStackNavigation from './TechnicianStackNavigation';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { getThemeColors } from '../theme';
 
@@ -44,9 +46,11 @@ const StackNavigation = () => {
         <Stack.Screen name="Flash"      component={FlashScreen}      />
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="Login"      component={AuthPhoneScreen}  />
+        <Stack.Screen name="TechnicianLogin" component={TechnicianLoginScreen} />
         <Stack.Screen name="OtpVerification" component={OtpVerificationScreen} />
         <Stack.Screen name="NameSetup" component={NameSetupScreen} />
         <Stack.Screen name="Main"       component={HomeBottomNav}    />
+        <Stack.Screen name="TechnicianMain" component={TechnicianStackNavigation} />
         <Stack.Screen name="Search"     component={SearchScreen}     />
         <Stack.Screen name="AiChat"     component={AiChat}           />
       </Stack.Navigator>
