@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
@@ -136,6 +137,12 @@ export default function TechnicianJobsScreen({ navigation }) {
   useEffect(() => {
     loadAssignments();
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadAssignments({ refreshing: true });
+    }, []),
+  );
 
   const list = jobsByTab[activeTab] || [];
   const tabCounts = {
@@ -276,9 +283,12 @@ export default function TechnicianJobsScreen({ navigation }) {
                   <View style={styles.jobIdentity}>
                     <TechIconBubble icon={job.icon} tone={job.iconBg} size={48} />
 
-                    <View style={styles.jobCopyBlock}>
+                  <View style={styles.jobCopyBlock}>
                       <Text style={styles.jobTitle}>{job.title}</Text>
                       <Text style={styles.jobIssue}>{job.issue}</Text>
+                      <Text style={styles.jobBookingMeta}>
+                        {job.bookingNumber || 'Booking pending'} • {job.customerName}
+                      </Text>
                     </View>
                   </View>
 
@@ -287,8 +297,17 @@ export default function TechnicianJobsScreen({ navigation }) {
 
                 <View style={styles.locationRow}>
                   <Icon name="map-marker-outline" size={15} color={TECH_COLORS.textMuted} />
-                  <Text style={styles.locationValue}>{job.area}</Text>
+                  <Text style={styles.locationValue}>
+                    {job.areaLabel ? `${job.areaLabel} • ${job.area}` : job.area}
+                  </Text>
                 </View>
+
+                {!!job.customerPhone && (
+                  <View style={styles.locationRow}>
+                    <Icon name="phone-outline" size={15} color={TECH_COLORS.textMuted} />
+                    <Text style={styles.locationValue}>{job.customerPhone}</Text>
+                  </View>
+                )}
 
                 <View style={styles.metaRow}>
                   <View style={styles.metaChip}>
@@ -298,7 +317,7 @@ export default function TechnicianJobsScreen({ navigation }) {
 
                   <View style={styles.metaChip}>
                     <Icon name="cash-multiple" size={14} color={TECH_COLORS.emerald} />
-                    <Text style={styles.metaChipText}>{job.visitText}</Text>
+                    <Text style={styles.metaChipText}>{job.initialFeeLabel}</Text>
                   </View>
 
                   <View style={styles.metaChip}>
@@ -598,6 +617,12 @@ const createStyles = ({
     marginTop: 3,
     fontSize: 12,
     color: TECH_COLORS.textSecondary,
+  },
+  jobBookingMeta: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '700',
+    color: TECH_COLORS.coral,
   },
   locationRow: {
     flexDirection: 'row',

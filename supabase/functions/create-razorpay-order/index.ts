@@ -402,15 +402,6 @@ Deno.serve(async (req) => {
     return json({ error: paymentOrderError.message }, 400);
   }
 
-  await adminClient.from('payment_events').insert({
-    payment_order_id: paymentOrder.id,
-    booking_id: bookingRecord?.id ?? null,
-    provider: 'razorpay',
-    provider_event_id: razorpayPayload.id,
-    event_type: 'order_created',
-    payload: razorpayPayload,
-  });
-
   if (paymentStage === 'booking_fee') {
     await adminClient
       .from('booking_checkout_sessions')

@@ -1,7 +1,8 @@
 -- TrustFix payment schema
 -- Run this after trustfix_core_schema.sql and, if used, trustfix_technician_schema.sql.
--- Covers booking-fee payments, final invoice payments, provider event logs,
--- payment attempts, refunds, and technician payout tracking.
+-- Keeps only the payment tables required by the current live flow:
+--   1. payment_orders
+--   2. technician_payout_requests
 
 create extension if not exists pgcrypto;
 
@@ -66,56 +67,6 @@ create table if not exists public.payment_orders (
   constraint payment_orders_technician_settlement_amount_chk check (technician_settlement_amount >= 0)
 );
 
-create table if not exists public.payment_attempts (
-  id uuid primary key default gen_random_uuid(),
-  payment_order_id uuid not null references public.payment_orders(id) on delete cascade,
-  attempt_no integer not null default 1,
-  status text not null default 'created',
-  payment_method text,
-  provider_payment_id text,
-  provider_error_code text,
-  provider_error_source text,
-  provider_error_step text,
-  provider_error_description text,
-  payload jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now()),
-  constraint payment_attempts_status_chk check (
-    status in ('created', 'authorized', 'captured', 'failed', 'cancelled')
-  ),
-  constraint payment_attempts_attempt_no_chk check (attempt_no > 0),
-  constraint payment_attempts_unique unique (payment_order_id, attempt_no)
-);
-
-create table if not exists public.payment_events (
-  id uuid primary key default gen_random_uuid(),
-  payment_order_id uuid references public.payment_orders(id) on delete cascade,
-  booking_id uuid references public.bookings(id) on delete cascade,
-  provider text not null default 'razorpay',
-  provider_event_id text,
-  event_type text not null,
-  payload jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default timezone('utc', now()),
-  constraint payment_events_provider_chk check (provider in ('razorpay'))
-);
-
-create table if not exists public.payment_refunds (
-  id uuid primary key default gen_random_uuid(),
-  payment_order_id uuid not null references public.payment_orders(id) on delete cascade,
-  booking_id uuid references public.bookings(id) on delete cascade,
-  provider_refund_id text unique,
-  amount numeric(10, 2) not null default 0,
-  status text not null default 'pending',
-  reason text,
-  payload jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now()),
-  constraint payment_refunds_amount_chk check (amount >= 0),
-  constraint payment_refunds_status_chk check (
-    status in ('pending', 'processed', 'failed')
-  )
-);
-
 create table if not exists public.technician_payout_requests (
   id uuid primary key default gen_random_uuid(),
   technician_id uuid not null references public.technician_profiles(id) on delete cascade,
@@ -161,33 +112,12 @@ create index if not exists payment_orders_technician_id_created_at_idx
 create index if not exists payment_orders_status_idx
   on public.payment_orders(status);
 
-create index if not exists payment_attempts_payment_order_id_idx
-  on public.payment_attempts(payment_order_id, attempt_no desc);
-
-create index if not exists payment_events_payment_order_id_idx
-  on public.payment_events(payment_order_id, created_at desc);
-
-create index if not exists payment_refunds_payment_order_id_idx
-  on public.payment_refunds(payment_order_id, created_at desc);
-
 create index if not exists technician_payout_requests_technician_id_idx
   on public.technician_payout_requests(technician_id, requested_at desc);
 
 drop trigger if exists payment_orders_set_updated_at on public.payment_orders;
 create trigger payment_orders_set_updated_at
   before update on public.payment_orders
-  for each row
-  execute procedure public.set_updated_at();
-
-drop trigger if exists payment_attempts_set_updated_at on public.payment_attempts;
-create trigger payment_attempts_set_updated_at
-  before update on public.payment_attempts
-  for each row
-  execute procedure public.set_updated_at();
-
-drop trigger if exists payment_refunds_set_updated_at on public.payment_refunds;
-create trigger payment_refunds_set_updated_at
-  before update on public.payment_refunds
   for each row
   execute procedure public.set_updated_at();
 
@@ -198,21 +128,12 @@ create trigger technician_payout_requests_set_updated_at
   execute procedure public.set_updated_at();
 
 alter table public.payment_orders enable row level security;
-alter table public.payment_attempts enable row level security;
-alter table public.payment_events enable row level security;
-alter table public.payment_refunds enable row level security;
 alter table public.technician_payout_requests enable row level security;
 
 revoke all on table public.payment_orders from anon, authenticated;
-revoke all on table public.payment_attempts from anon, authenticated;
-revoke all on table public.payment_events from anon, authenticated;
-revoke all on table public.payment_refunds from anon, authenticated;
 revoke all on table public.technician_payout_requests from anon, authenticated;
 
 grant select, insert, update on table public.payment_orders to authenticated;
-grant select, insert, update on table public.payment_attempts to authenticated;
-grant select, insert on table public.payment_events to authenticated;
-grant select, insert, update on table public.payment_refunds to authenticated;
 grant select, insert, update on table public.technician_payout_requests to authenticated;
 
 drop policy if exists "payment_orders_select_customer_own" on public.payment_orders;
@@ -258,144 +179,6 @@ for update
 to authenticated
 using ((select auth.uid()) is not null and (select auth.uid()) = user_id)
 with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
-
-drop policy if exists "payment_attempts_select_via_order" on public.payment_attempts;
-create policy "payment_attempts_select_via_order"
-on public.payment_attempts
-for select
-to authenticated
-using (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_attempts.payment_order_id
-      and (
-        po.user_id = (select auth.uid())
-        or po.technician_id = (select auth.uid())
-      )
-  )
-);
-
-drop policy if exists "payment_attempts_insert_via_order" on public.payment_attempts;
-create policy "payment_attempts_insert_via_order"
-on public.payment_attempts
-for insert
-to authenticated
-with check (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_attempts.payment_order_id
-      and po.user_id = (select auth.uid())
-  )
-);
-
-drop policy if exists "payment_attempts_update_via_order" on public.payment_attempts;
-create policy "payment_attempts_update_via_order"
-on public.payment_attempts
-for update
-to authenticated
-using (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_attempts.payment_order_id
-      and po.user_id = (select auth.uid())
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_attempts.payment_order_id
-      and po.user_id = (select auth.uid())
-  )
-);
-
-drop policy if exists "payment_events_select_via_order" on public.payment_events;
-create policy "payment_events_select_via_order"
-on public.payment_events
-for select
-to authenticated
-using (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_events.payment_order_id
-      and (
-        po.user_id = (select auth.uid())
-        or po.technician_id = (select auth.uid())
-      )
-  )
-);
-
-drop policy if exists "payment_events_insert_customer_own" on public.payment_events;
-create policy "payment_events_insert_customer_own"
-on public.payment_events
-for insert
-to authenticated
-with check (
-  payment_order_id is not null
-  and exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_events.payment_order_id
-      and po.user_id = (select auth.uid())
-  )
-);
-
-drop policy if exists "payment_refunds_select_via_order" on public.payment_refunds;
-create policy "payment_refunds_select_via_order"
-on public.payment_refunds
-for select
-to authenticated
-using (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_refunds.payment_order_id
-      and (
-        po.user_id = (select auth.uid())
-        or po.technician_id = (select auth.uid())
-      )
-  )
-);
-
-drop policy if exists "payment_refunds_insert_customer_own" on public.payment_refunds;
-create policy "payment_refunds_insert_customer_own"
-on public.payment_refunds
-for insert
-to authenticated
-with check (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_refunds.payment_order_id
-      and po.user_id = (select auth.uid())
-  )
-);
-
-drop policy if exists "payment_refunds_update_customer_own" on public.payment_refunds;
-create policy "payment_refunds_update_customer_own"
-on public.payment_refunds
-for update
-to authenticated
-using (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_refunds.payment_order_id
-      and po.user_id = (select auth.uid())
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.payment_orders po
-    where po.id = payment_refunds.payment_order_id
-      and po.user_id = (select auth.uid())
-  )
-);
 
 drop policy if exists "technician_payout_requests_select_own" on public.technician_payout_requests;
 create policy "technician_payout_requests_select_own"

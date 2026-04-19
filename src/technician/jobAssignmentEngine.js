@@ -1,92 +1,5 @@
 import { supabase } from '../lib/supabase';
-
-const formatScheduledSlot = (booking = {}) => {
-  const date = booking.scheduled_date;
-  const slot = String(booking.scheduled_slot_label || '').trim();
-
-  if (date && slot) {
-    return `${date} • ${slot}`;
-  }
-
-  if (date) {
-    return String(date);
-  }
-
-  return slot || 'Schedule pending';
-};
-
-const getActiveStatusMeta = (bookingStatus) => {
-  if (bookingStatus === 'in_progress') {
-    return { label: 'In Progress', tone: 'emerald' };
-  }
-
-  if (bookingStatus === 'en_route' || bookingStatus === 'arrived' || bookingStatus === 'otp_verified') {
-    return { label: 'En Route', tone: 'amber' };
-  }
-
-  return { label: 'Accepted', tone: 'sky' };
-};
-
-export const mapAssignmentToJobCard = (assignment = {}) => {
-  const booking = assignment.bookings || {};
-  const bookingStatus = String(booking.status || '').trim();
-  const assignmentStatus = String(assignment.status || '').trim();
-  const activeMeta = getActiveStatusMeta(bookingStatus);
-
-  const bucket = assignmentStatus === 'accepted'
-    ? (bookingStatus === 'completed' ? 'Completed' : 'Active')
-    : assignmentStatus === 'completed'
-      ? 'Completed'
-      : 'Upcoming';
-
-  return {
-    id: assignment.id,
-    bookingId: assignment.booking_id,
-    assignmentStatus,
-    bucket,
-    title: String(booking.service_name_snapshot || 'Service request').trim(),
-    issue: String(booking.problem_name_snapshot || booking.custom_problem || 'Problem shared by customer').trim(),
-    area: String(booking.address_snapshot || 'Address pending').trim(),
-    slot: formatScheduledSlot(booking),
-    visitText: bucket === 'Upcoming'
-      ? 'Waiting for acceptance'
-      : bucket === 'Completed'
-        ? 'Customer total recorded'
-        : 'Accepted service',
-    status: bucket === 'Upcoming'
-      ? 'New'
-      : bucket === 'Completed'
-        ? 'Completed'
-        : activeMeta.label,
-    statusTone: bucket === 'Upcoming'
-      ? 'sky'
-      : bucket === 'Completed'
-        ? 'emerald'
-        : activeMeta.tone,
-    type: bucket === 'Upcoming'
-      ? 'New request'
-      : bucket === 'Completed'
-        ? 'Past service'
-        : 'Accepted',
-    icon: 'briefcase-outline',
-    iconBg: 'sky',
-    paymentDone: String(booking.payment_status || '').trim() === 'paid',
-    raw: assignment,
-  };
-};
-
-export const bucketAssignmentsByTab = (assignments = []) => {
-  return assignments
-    .map(mapAssignmentToJobCard)
-    .reduce((accumulator, job) => {
-      accumulator[job.bucket].push(job);
-      return accumulator;
-    }, {
-      Active: [],
-      Upcoming: [],
-      Completed: [],
-    });
-};
+import { bucketAssignmentsByTab } from './jobDispatchAlgorithm';
 
 export const fetchTechnicianAssignments = async () => {
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -110,17 +23,26 @@ export const fetchTechnicianAssignments = async () => {
       offered_at,
       accepted_at,
       responded_at,
+      created_at,
+      updated_at,
       bookings (
         id,
+        booking_number,
         status,
         payment_status,
         service_name_snapshot,
         problem_name_snapshot,
         custom_problem,
+        customer_name_snapshot,
+        customer_phone_snapshot,
+        address_label_snapshot,
         address_snapshot,
         scheduled_date,
         scheduled_slot_label,
-        estimated_total
+        visit_charge,
+        platform_fee,
+        estimated_total,
+        work_completed_at
       )
     `,
     filters: [
@@ -138,6 +60,76 @@ export const fetchTechnicianAssignments = async () => {
     data: bucketAssignmentsByTab(Array.isArray(result.data) ? result.data : []),
     error: null,
   };
+};
+
+export const fetchTechnicianJobDetail = async (bookingId) => {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+
+  if (userError) {
+    return { data: null, error: userError };
+  }
+
+  const userId = userData?.user?.id;
+
+  if (!userId || !bookingId) {
+    return { data: null, error: { message: 'Job not found.' } };
+  }
+
+  const result = await supabase.db.select('booking_assignments', {
+    columns: `
+      id,
+      booking_id,
+      technician_id,
+      status,
+      offered_at,
+      responded_at,
+      accepted_at,
+      created_at,
+      updated_at,
+      bookings (
+        id,
+        booking_number,
+        status,
+        payment_status,
+        severity,
+        service_name_snapshot,
+        problem_name_snapshot,
+        custom_problem,
+        customer_name_snapshot,
+        customer_phone_snapshot,
+        address_label_snapshot,
+        address_snapshot,
+        scheduled_date,
+        scheduled_slot_label,
+        visit_charge,
+        platform_fee,
+        protection_selected,
+        protection_fee,
+        urgency_surcharge,
+        estimated_total,
+        technician_id,
+        technician_service_id,
+        created_at
+      )
+    `,
+    filters: [
+      { column: 'technician_id', op: 'eq', value: userId },
+      { column: 'booking_id', op: 'eq', value: bookingId },
+    ],
+    order: [{ column: 'created_at', ascending: false }],
+    limit: 1,
+    maybeSingle: true,
+  });
+
+  if (result.error) {
+    return { data: null, error: result.error };
+  }
+
+  if (!result.data?.bookings) {
+    return { data: null, error: { message: 'This booking is not available for your profile.' } };
+  }
+
+  return { data: result.data, error: null };
 };
 
 export const acceptTechnicianJob = async (bookingId) => {

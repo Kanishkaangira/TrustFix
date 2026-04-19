@@ -175,6 +175,8 @@ create table if not exists public.bookings (
   id uuid primary key default gen_random_uuid(),
   booking_number text not null unique default public.generate_booking_number(),
   user_id uuid not null references public.profiles(id) on delete cascade,
+  technician_id uuid,
+  technician_service_id uuid,
   address_id uuid references public.addresses(id) on delete set null,
   service_id uuid not null references public.services(id) on delete restrict,
   service_problem_id uuid references public.service_problems(id) on delete set null,
@@ -335,6 +337,12 @@ create index if not exists booking_checkout_sessions_user_id_created_at_idx
 
 create index if not exists bookings_user_id_created_at_idx
   on public.bookings(user_id, created_at desc);
+
+create index if not exists bookings_technician_id_idx
+  on public.bookings(technician_id, created_at desc);
+
+create index if not exists bookings_technician_service_id_idx
+  on public.bookings(technician_service_id, created_at desc);
 
 create index if not exists bookings_address_id_idx
   on public.bookings(address_id);
@@ -803,6 +811,25 @@ on public.bookings
 for select
 to authenticated
 using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
+drop policy if exists "bookings_select_technician_assigned_or_notified" on public.bookings;
+create policy "bookings_select_technician_assigned_or_notified"
+on public.bookings
+for select
+to authenticated
+using (
+  (select auth.uid()) is not null
+  and (
+    technician_id = (select auth.uid())
+    or exists (
+      select 1
+      from public.booking_assignments ba
+      where ba.booking_id = bookings.id
+        and ba.technician_id = (select auth.uid())
+        and ba.status in ('notified', 'accepted', 'completed')
+    )
+  )
+);
 
 drop policy if exists "bookings_update_requested_or_cancel_own" on public.bookings;
 create policy "bookings_update_requested_or_cancel_own"

@@ -89,24 +89,6 @@ export const openRazorpayCheckout = async ({
   description,
 }));
 
-export const createBookingPaymentOrder = async ({
-  booking,
-  userId,
-  technicianId = null,
-  notes = {},
-}) => {
-  const payload = buildBookingPaymentOrderPayload({
-    booking,
-    userId,
-    technicianId,
-    notes,
-  });
-
-  return supabase.db.insert('payment_orders', payload, {
-    single: true,
-  });
-};
-
 export const initializeBookingFeePayment = async ({
   bookingDraft,
 }) => supabase.functions.invoke('create-razorpay-order', {
@@ -137,19 +119,4 @@ export const verifyRazorpayPayment = async ({
     razorpay_payment_id: razorpayPaymentId,
     razorpay_signature: razorpaySignature,
   },
-});
-
-export const logPaymentEvent = async ({
-  paymentOrderId,
-  bookingId,
-  eventType,
-  payload = {},
-}) => supabase.db.insert('payment_events', {
-  payment_order_id: paymentOrderId,
-  booking_id: bookingId || null,
-  provider: RAZORPAY_PROVIDER,
-  event_type: eventType,
-  payload,
-}, {
-  single: true,
 });

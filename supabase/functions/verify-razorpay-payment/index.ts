@@ -105,18 +105,6 @@ Deno.serve(async (req) => {
   const expectedSignature = await signRazorpayPayload(`${razorpayOrderId}|${razorpayPaymentId}`);
 
   if (expectedSignature !== razorpaySignature) {
-    await adminClient.from('payment_attempts').insert({
-      payment_order_id: paymentOrder.id,
-      attempt_no: 1,
-      status: 'failed',
-      provider_payment_id: razorpayPaymentId,
-      provider_error_description: 'Signature verification failed',
-      payload: {
-        razorpay_order_id: razorpayOrderId,
-        razorpay_payment_id: razorpayPaymentId,
-      },
-    });
-
     return json({ error: 'Invalid payment signature.' }, 400);
   }
 
@@ -196,30 +184,6 @@ Deno.serve(async (req) => {
   if (updateError) {
     return json({ error: updateError.message }, 400);
   }
-
-  await adminClient.from('payment_attempts').insert({
-    payment_order_id: updatedPaymentOrder.id,
-    attempt_no: 1,
-    status: 'captured',
-    provider_payment_id: razorpayPaymentId,
-    payment_method: 'online',
-    payload: {
-      razorpay_order_id: razorpayOrderId,
-      razorpay_payment_id: razorpayPaymentId,
-    },
-  });
-
-  await adminClient.from('payment_events').insert({
-    payment_order_id: updatedPaymentOrder.id,
-    booking_id: bookingId,
-    provider: 'razorpay',
-    provider_event_id: razorpayPaymentId,
-    event_type: 'payment_captured',
-    payload: {
-      razorpay_order_id: razorpayOrderId,
-      razorpay_payment_id: razorpayPaymentId,
-    },
-  });
 
   if (bookingId) {
     const bookingUpdate = updatedPaymentOrder.payment_stage === 'booking_fee'

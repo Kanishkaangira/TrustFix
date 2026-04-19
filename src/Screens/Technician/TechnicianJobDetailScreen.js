@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  Linking,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -11,7 +13,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
-import { jobDetail } from '../../technician/mockData';
+import { fetchTechnicianJobDetail } from '../../technician/jobAssignmentEngine';
 import {
   useTechScreenTheme,
 } from '../../technician/theme';
@@ -23,13 +25,128 @@ import {
   TechScreenHeader,
 } from '../../technician/components/TechUi';
 
-export default function TechnicianJobDetailScreen({ navigation }) {
+const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
+
+const formatSeverityLabel = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (!normalized) {
+    return 'Not set';
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const formatSchedule = (booking = {}) => {
+  const date = String(booking.scheduled_date || '').trim();
+  const slot = String(booking.scheduled_slot_label || '').trim();
+
+  if (date && slot) {
+    return `${date} • ${slot}`;
+  }
+
+  return date || slot || 'Schedule pending';
+};
+
+const formatProblem = (booking = {}) => (
+  String(
+    booking.problem_name_snapshot ||
+    booking.custom_problem ||
+    'Problem details not shared yet.',
+  ).trim()
+);
+
+const formatStatusTone = (assignmentStatus, bookingStatus) => {
+  if (assignmentStatus === 'notified') {
+    return { label: 'New Request', tone: 'sky' };
+  }
+
+  if (bookingStatus === 'completed') {
+    return { label: 'Completed', tone: 'emerald' };
+  }
+
+  if (['accepted', 'en_route', 'arrived', 'otp_verified', 'in_progress'].includes(bookingStatus)) {
+    return { label: 'Accepted', tone: 'emerald' };
+  }
+
+  return { label: 'Assigned', tone: 'amber' };
+};
+
+const getCustomerInitials = (name) => {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'CU';
+};
+
+export default function TechnicianJobDetailScreen({ navigation, route }) {
+  const bookingId = route?.params?.jobId;
   const {
     colors: TECH_COLORS,
     gradients: TECH_GRADIENTS,
     statusBarStyle,
     styles,
   } = useTechScreenTheme(createStyles);
+  const [jobRecord, setJobRecord] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadJob = async () => {
+      setIsLoading(true);
+      setErrorMessage('');
+
+      const result = await fetchTechnicianJobDetail(bookingId);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (result.error) {
+        setJobRecord(null);
+        setErrorMessage(result.error.message || 'Could not load this booking right now.');
+      } else {
+        setJobRecord(result.data);
+      }
+
+      setIsLoading(false);
+    };
+
+    loadJob();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [bookingId]);
+
+  const assignment = jobRecord || {};
+  const booking = assignment.bookings || {};
+  const statusMeta = formatStatusTone(assignment.status, booking.status);
+  const customerName = String(booking.customer_name_snapshot || 'Customer').trim();
+  const customerPhone = String(booking.customer_phone_snapshot || '').trim();
+  const customerInitials = getCustomerInitials(customerName);
+  const problemLabel = formatProblem(booking);
+  const scheduleLabel = formatSchedule(booking);
+  const severityLabel = formatSeverityLabel(booking.severity);
+  const serviceName = String(booking.service_name_snapshot || 'Service request').trim();
+  const amountRows = useMemo(() => ([
+    { label: 'Visit charge', value: formatCurrency(booking.visit_charge) },
+    { label: 'Platform fee', value: formatCurrency(booking.platform_fee) },
+    { label: 'Repair protection', value: booking.protection_selected ? formatCurrency(booking.protection_fee) : 'Not selected' },
+    { label: 'Urgency surcharge', value: Number(booking.urgency_surcharge || 0) > 0 ? formatCurrency(booking.urgency_surcharge) : 'Not applied' },
+    { label: 'Initial total', value: formatCurrency(booking.estimated_total), tone: 'emerald' },
+  ]), [
+    booking.estimated_total,
+    booking.platform_fee,
+    booking.protection_fee,
+    booking.protection_selected,
+    booking.urgency_surcharge,
+    booking.visit_charge,
+  ]);
 
   return (
     <ScreenWrapper
@@ -41,7 +158,7 @@ export default function TechnicianJobDetailScreen({ navigation }) {
         <TechScreenHeader
           title="Job Detail"
           onBackPress={() => navigation.goBack()}
-          right={<TechBadge label="Accepted" tone="emerald" />}
+          right={<TechBadge label={statusMeta.label} tone={statusMeta.tone} />}
         />
 
         <ScrollView
@@ -49,87 +166,129 @@ export default function TechnicianJobDetailScreen({ navigation }) {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <LinearGradient
-            colors={TECH_GRADIENTS.brand}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.serviceBanner}
-          >
-            <Text style={styles.serviceIcon}>❄️</Text>
-            <Text style={styles.serviceTitle}>{jobDetail.service}</Text>
-            <Text style={styles.serviceSubtitle}>{jobDetail.issue}</Text>
+          {isLoading ? (
+            <TechCard style={styles.stateCard}>
+              <ActivityIndicator color={TECH_COLORS.coral} />
+              <Text style={styles.stateTitle}>Loading booking details</Text>
+              <Text style={styles.stateText}>
+                Pulling the latest customer request from TrustFix.
+              </Text>
+            </TechCard>
+          ) : null}
 
-            <View style={styles.cutCard}>
-              <Text style={styles.cutValue}>{jobDetail.visitCut}</Text>
-              <Text style={styles.cutLabel}>YOUR CUT</Text>
-            </View>
-          </LinearGradient>
+          {!isLoading && errorMessage ? (
+            <TechCard style={styles.stateCard}>
+              <Icon name="alert-circle-outline" size={28} color={TECH_COLORS.rose} />
+              <Text style={styles.stateTitle}>Could not load job</Text>
+              <Text style={styles.stateText}>{errorMessage}</Text>
+            </TechCard>
+          ) : null}
 
-          <View style={styles.sectionWrap}>
-            <Text style={styles.eyebrow}>Customer</Text>
-            <TechCard style={styles.sectionCard}>
-              <View style={styles.customerTop}>
-                <View style={styles.customerAvatar}>
-                  <Text style={styles.customerInitial}>{jobDetail.initials}</Text>
+          {!isLoading && !errorMessage ? (
+            <>
+              <LinearGradient
+                colors={TECH_GRADIENTS.brand}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.serviceBanner}
+              >
+                <Text style={styles.serviceTitle}>{serviceName}</Text>
+                <Text style={styles.serviceSubtitle}>{problemLabel}</Text>
+
+                <View style={styles.cutCard}>
+                  <Text style={styles.cutValue}>{severityLabel}</Text>
+                  <Text style={styles.cutLabel}>PROBLEM TYPE</Text>
                 </View>
 
-                <View style={styles.customerCopy}>
-                  <Text style={styles.customerName}>{jobDetail.customer}</Text>
-                  <Text style={styles.customerHint}>Reveal phone on arrival</Text>
+                <View style={styles.bannerMeta}>
+                  <Text style={styles.bannerMetaText}>{booking.booking_number || 'Booking pending'}</Text>
+                  <Text style={styles.bannerMetaDot}>•</Text>
+                  <Text style={styles.bannerMetaText}>{scheduleLabel}</Text>
                 </View>
+              </LinearGradient>
 
-                <View style={styles.phoneMask}>
-                  <Text style={styles.phoneMaskText}>{jobDetail.phoneMasked}</Text>
-                </View>
+              <View style={styles.sectionWrap}>
+                <Text style={styles.eyebrow}>Customer</Text>
+                <TechCard style={styles.sectionCard}>
+                  <View style={styles.customerTop}>
+                    <View style={styles.customerAvatar}>
+                      <Text style={styles.customerInitial}>{customerInitials}</Text>
+                    </View>
+
+                    <View style={styles.customerCopy}>
+                      <Text style={styles.customerName}>{customerName}</Text>
+                      <Text style={styles.customerHint}>
+                        {customerPhone || 'Customer phone not available'}
+                      </Text>
+                    </View>
+
+                    {customerPhone ? (
+                      <TouchableOpacity
+                        activeOpacity={0.86}
+                        style={styles.callButton}
+                        onPress={() => Linking.openURL(`tel:${customerPhone.replace(/\s+/g, '')}`)}
+                      >
+                        <Icon name="phone-outline" size={18} color={TECH_COLORS.emerald} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.addressRow}>
+                    <Icon name="map-marker-outline" size={16} color={TECH_COLORS.textSecondary} />
+                    <View style={styles.addressCopy}>
+                      <Text style={styles.addressText}>
+                        {booking.address_label_snapshot
+                          ? `${booking.address_label_snapshot} • ${booking.address_snapshot || 'Address pending'}`
+                          : booking.address_snapshot || 'Address pending'}
+                      </Text>
+                    </View>
+                  </View>
+                </TechCard>
               </View>
 
-              <View style={styles.addressRow}>
-                <Icon name="map-marker-outline" size={16} color={TECH_COLORS.textSecondary} />
-                <View style={styles.addressCopy}>
-                  <Text style={styles.addressText}>{jobDetail.address}</Text>
-                  <Text style={styles.distanceText}>{jobDetail.distance}</Text>
-                </View>
-                <TouchableOpacity
-                  activeOpacity={0.86}
-                  style={styles.navigateButton}
-                  onPress={() => navigation.navigate('TechnicianEnRoute')}
-                >
-                  <Text style={styles.navigateText}>Navigate</Text>
-                </TouchableOpacity>
+              <View style={styles.sectionWrap}>
+                <Text style={styles.eyebrow}>Booking Details</Text>
+                <TechCard style={styles.infoCard}>
+                  <TechRow label="Booking number" value={booking.booking_number || '-'} />
+                  <View style={styles.divider} />
+                  <TechRow label="Problem type" value={severityLabel} />
+                  <View style={styles.divider} />
+                  <TechRow label="Problem" value={problemLabel} />
+                  <View style={styles.divider} />
+                  <TechRow label="Scheduled slot" value={scheduleLabel} />
+                  <View style={styles.divider} />
+                  <TechRow label="Booking status" value={String(booking.status || 'pending').replace(/_/g, ' ')} />
+                  <View style={styles.divider} />
+                  <TechRow label="Payment status" value={String(booking.payment_status || 'pending').replace(/_/g, ' ')} />
+                </TechCard>
               </View>
-            </TechCard>
-          </View>
 
-          <View style={styles.sectionWrap}>
-            <Text style={styles.eyebrow}>Booking Details</Text>
-            <TechCard style={styles.infoCard}>
-              <TechRow label="Booking type" value={jobDetail.bookingType} />
-              <View style={styles.divider} />
-              <TechRow label="Time slot" value={jobDetail.timeSlot} />
-              <View style={styles.divider} />
-              <TechRow label="Problem" value={jobDetail.problem} />
-              <View style={styles.divider} />
-              <TechRow label="Notes" value={jobDetail.notes} />
-            </TechCard>
-          </View>
+              <View style={styles.sectionWrap}>
+                <Text style={styles.eyebrow}>Initial Charges</Text>
+                <TechCard style={styles.infoCard}>
+                  {amountRows.map((row, index) => (
+                    <View key={row.label}>
+                      <TechRow label={row.label} value={row.value} tone={row.tone} />
+                      {index < amountRows.length - 1 ? <View style={styles.divider} /> : null}
+                    </View>
+                  ))}
+                </TechCard>
+              </View>
 
-          <View style={styles.sectionWrap}>
-            <Text style={styles.eyebrow}>Your Earnings (Guaranteed)</Text>
-            <View style={styles.earningPreview}>
-              <TechRow label="Visit fee cut (Normal)" value={jobDetail.visitCut} tone="emerald" />
-              <View style={styles.earningDivider} />
-              <TechRow
-                label="Labour (after job, 0% ≤ ₹800)"
-                value={jobDetail.labourHint}
+              <TechGradientButton
+                label={assignment.status === 'accepted' ? "I'm On My Way" : 'Back to Jobs'}
+                variant="emerald"
+                onPress={() => {
+                  if (assignment.status === 'accepted') {
+                    navigation.navigate('TechnicianEnRoute', { jobId: bookingId });
+                    return;
+                  }
+
+                  navigation.goBack();
+                }}
               />
-            </View>
-          </View>
-
-          <TechGradientButton
-            label="I'm On My Way"
-            variant="emerald"
-            onPress={() => navigation.navigate('TechnicianEnRoute')}
-          />
+            </>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </ScreenWrapper>
@@ -148,24 +307,40 @@ const createStyles = ({
     paddingHorizontal: 20,
     paddingBottom: 32,
   },
+  stateCard: {
+    marginTop: 12,
+    padding: 20,
+    alignItems: 'center',
+  },
+  stateTitle: {
+    marginTop: 10,
+    fontSize: 16,
+    fontWeight: '800',
+    color: TECH_COLORS.text,
+  },
+  stateText: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 19,
+    color: TECH_COLORS.textSecondary,
+    textAlign: 'center',
+  },
   serviceBanner: {
     borderRadius: TECH_RADIUS.xl,
     padding: 18,
     overflow: 'hidden',
   },
-  serviceIcon: {
-    fontSize: 28,
-    marginBottom: 8,
-  },
   serviceTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
     color: TECH_COLORS.white,
   },
   serviceSubtitle: {
-    marginTop: 3,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.76)',
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(255,255,255,0.82)',
+    paddingRight: 110,
   },
   cutCard: {
     position: 'absolute',
@@ -180,7 +355,7 @@ const createStyles = ({
     borderColor: 'rgba(255,255,255,0.24)',
   },
   cutValue: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
     color: TECH_COLORS.white,
   },
@@ -189,6 +364,22 @@ const createStyles = ({
     fontWeight: '800',
     letterSpacing: 1,
     color: 'rgba(255,255,255,0.72)',
+  },
+  bannerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  bannerMetaText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.88)',
+  },
+  bannerMetaDot: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.58)',
   },
   sectionWrap: {
     marginTop: 16,
@@ -236,18 +427,15 @@ const createStyles = ({
     fontSize: 11,
     color: TECH_COLORS.textMuted,
   },
-  phoneMask: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+  callButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: TECH_COLORS.border,
-    backgroundColor: TECH_COLORS.float,
-  },
-  phoneMaskText: {
-    fontSize: 12,
-    color: TECH_COLORS.textSecondary,
-    fontWeight: '700',
+    borderColor: 'rgba(16,217,160,0.24)',
+    backgroundColor: TECH_COLORS.emeraldTint,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addressRow: {
     flexDirection: 'row',
@@ -259,31 +447,11 @@ const createStyles = ({
   addressCopy: {
     flex: 1,
     paddingLeft: 8,
-    paddingRight: 10,
   },
   addressText: {
     fontSize: 13,
     lineHeight: 18,
     color: TECH_COLORS.textSecondary,
-  },
-  distanceText: {
-    marginTop: 3,
-    fontSize: 12,
-    fontWeight: '700',
-    color: TECH_COLORS.sky,
-  },
-  navigateButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: TECH_COLORS.skyTint,
-    borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
-  },
-  navigateText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: TECH_COLORS.sky,
   },
   infoCard: {
     paddingHorizontal: 16,
@@ -292,17 +460,5 @@ const createStyles = ({
   divider: {
     height: 1,
     backgroundColor: TECH_COLORS.border,
-  },
-  earningPreview: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: TECH_RADIUS.lg,
-    backgroundColor: TECH_COLORS.emeraldTint,
-    borderWidth: 1,
-    borderColor: 'rgba(16,217,160,0.24)',
-  },
-  earningDivider: {
-    height: 1,
-    backgroundColor: 'rgba(16,217,160,0.18)',
   },
 });
