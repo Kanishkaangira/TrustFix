@@ -9,7 +9,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
-import { jobAlert } from '../../technician/mockData';
+import { getTechnicianJobFlow } from '../../technician/jobFlowData';
 import { useTechScreenTheme } from '../../technician/theme';
 import { TechCard } from '../../technician/components/TechUi';
 
@@ -19,6 +19,7 @@ export default function TechnicianJobAlertScreen({ navigation }) {
     statusBarStyle,
     styles,
   } = useTechScreenTheme(createStyles);
+  const job = getTechnicianJobFlow('job-plumbing');
 
   return (
     <ScreenWrapper
@@ -44,17 +45,17 @@ export default function TechnicianJobAlertScreen({ navigation }) {
                   <Icon name="pipe-leak" size={28} color={TECH_COLORS.coral} />
                 </View>
                 <View style={styles.jobHeadCopy}>
-                  <Text style={styles.jobTitle}>{jobAlert.title}</Text>
-                  <Text style={styles.jobLabel}>{jobAlert.bookingType}</Text>
+                  <Text style={styles.jobTitle}>{job.service} - {job.issue}</Text>
+                  <Text style={styles.jobLabel}>{job.bookingType} booking · Same day</Text>
                 </View>
               </View>
 
               <View style={styles.grid}>
                 {[
-                  ['Area', jobAlert.area],
-                  ['Distance', jobAlert.distance],
-                  ['Visit Fee (Your Cut)', jobAlert.visitCut],
-                  ['Time Slot', jobAlert.timeSlot],
+                  ['Area', job.location.area],
+                  ['Distance', job.location.distance],
+                  ['Visit charge', `Rs ${job.fees.visitCharge}`],
+                  ['Time Slot', job.scheduledSlot],
                 ].map(([label, value]) => (
                   <View key={label} style={styles.gridCell}>
                     <Text style={styles.gridLabel}>{label}</Text>
@@ -83,7 +84,7 @@ export default function TechnicianJobAlertScreen({ navigation }) {
               <TouchableOpacity
                 activeOpacity={0.9}
                 style={styles.acceptButton}
-                onPress={() => navigation.replace('TechnicianJobDetail')}
+                onPress={() => navigation.replace('TechnicianJobDetail', { jobId: job.id })}
               >
                 <Text style={styles.acceptText}>Accept Job</Text>
                 <Icon name="check" size={18} color={TECH_COLORS.bg} />

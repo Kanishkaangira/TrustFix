@@ -63,61 +63,31 @@ const createSeverityMeta = (colors) => ({
   },
 });
 
-const buildPriceRows = ({ pricing, part, urgencySurcharge, severity, colors }) => {
-  const rows = [
-    {
-      key: 'visit',
-      icon: 'home-account',
-      label: 'Visit charge',
-      value: pricing.visitCharge,
-      tone: BRAND_ORANGE,
-      bg: BRAND_SOFT,
-    },
-    {
-      key: 'labour',
-      icon: 'hammer-wrench',
-      label: 'Labour cost',
-      value: pricing.labourCost,
-      tone: '#2563EB',
-      bg: '#EFF6FF',
-    },
-  ];
-
-  if (part) {
-    rows.push({
-      key: 'part',
-      icon: 'package-variant-closed',
-      label: part.name,
-      value: part.price,
-      sublabel: `MRP ${formatCurrency(part.mrp)} - Save ${formatCurrency(part.mrp - part.price)}`,
-      tone: colors.success,
-      bg: colors.successLight,
-      highlightValue: true,
-    });
-  }
-
-  if (urgencySurcharge > 0) {
-    rows.push({
-      key: 'urgency',
-      icon: severity === 'urgent' ? 'flash-outline' : 'clock-fast',
-      label: severity === 'urgent' ? 'Emergency surcharge' : 'Priority surcharge',
-      value: urgencySurcharge,
-      tone: severity === 'urgent' ? colors.danger : colors.warning,
-      bg: severity === 'urgent' ? colors.dangerLight : colors.warningLight,
-    });
-  }
-
-  rows.push({
+const buildVisibleFeeRows = ({ visitCharge, platformFee, severity, colors }) => ([
+  {
+    key: 'visit',
+    icon: severity === 'urgent' ? 'flash-outline' : 'home-account',
+    label: 'Visit charge',
+    value: visitCharge,
+    sublabel:
+      severity === 'urgent'
+        ? 'Includes urgent dispatch priority'
+        : severity === 'moderate'
+          ? 'Includes same-day dispatch priority'
+          : 'Applies to technician visit and inspection',
+    tone: BRAND_ORANGE,
+    bg: BRAND_SOFT,
+  },
+  {
     key: 'platform',
     icon: 'receipt-text-outline',
     label: 'Platform fee',
-    value: pricing.platformFee,
+    value: platformFee,
+    sublabel: 'Supports booking ops, support, and platform handling',
     tone: colors.inkSecondary,
     bg: colors.surfaceMuted,
-  });
-
-  return rows;
-};
+  },
+]);
 
 export default function PriceSummary({
   service,
@@ -141,34 +111,22 @@ export default function PriceSummary({
 
   const pricing = useMemo(() => ({
     visitCharge: Number(service?.baseVisitCharge || 149),
-    labourCost: Number(service?.baseLabourCost || 300),
     platformFee: Number(service?.platformFee || 49),
-  }), [service?.baseLabourCost, service?.baseVisitCharge, service?.platformFee]);
-  const part = useMemo(() => (
-    problem?.estimatedPartsName
-      ? {
-        name: problem.estimatedPartsName,
-        mrp: Number(problem.estimatedPartsMrp || problem.estimatedPartsPrice || 0),
-        price: Number(problem.estimatedPartsPrice || 0),
-      }
-      : null
-  ), [problem?.estimatedPartsMrp, problem?.estimatedPartsName, problem?.estimatedPartsPrice]);
+  }), [service?.baseVisitCharge, service?.platformFee]);
   const urgencySurcharge = severity === 'urgent' ? 150 : severity === 'moderate' ? 50 : 0;
+  const visitCharge = pricing.visitCharge + urgencySurcharge;
   const severityMeta = severityMetaMap[severity] || severityMetaMap.minor;
   const displayProblem = customProblem || problem?.label || 'General service';
   const serviceAccent = service?.accentColor || BRAND_ORANGE;
   const serviceSoft = service?.lightColor || BRAND_SOFT;
   const scheduleValue = getScheduleValue({ severity, date, slot });
-  const priceRows = useMemo(
-    () => buildPriceRows({ pricing, part, urgencySurcharge, severity, colors }),
-    [pricing, part, urgencySurcharge, severity, colors]
+  const visibleFeeRows = useMemo(
+    () => buildVisibleFeeRows({ visitCharge, platformFee: pricing.platformFee, severity, colors }),
+    [visitCharge, pricing.platformFee, severity, colors]
   );
 
-  const subtotal =
-    pricing.visitCharge +
-    pricing.labourCost +
-    (part ? part.price : 0) +
-    urgencySurcharge +
+  const visibleSubtotal =
+    visitCharge +
     pricing.platformFee +
     (repairProtection ? REPAIR_PROTECTION_PRICE : 0);
 
@@ -254,12 +212,15 @@ export default function PriceSummary({
       <View style={styles.priceCard}>
         <View style={styles.priceHeader}>
           <View style={styles.priceHeaderCopy}>
-            <Text style={styles.priceEyebrow}>ESTIMATE</Text>
+            <Text style={styles.priceEyebrow}>PRE-INSPECTION FEES</Text>
+            <Text style={styles.priceHeaderText}>
+              Visit charge and platform fee are visible now. Labour and parts are added only after technician inspection.
+            </Text>
           </View>
         </View>
 
         <View style={styles.priceList}>
-          {priceRows.map((item) => (
+          {visibleFeeRows.map((item) => (
             <View key={item.key} style={styles.priceRow}>
               <View style={styles.priceRowLeft}>
                 <View style={[styles.priceRowIconWrap, { backgroundColor: item.bg }]}>
@@ -315,23 +276,23 @@ export default function PriceSummary({
 
         <View style={styles.totalRow}>
           <View>
-            <Text style={styles.totalLabel}>Amount due</Text>
+            <Text style={styles.totalLabel}>Visible before inspection</Text>
           </View>
-          <Text style={styles.totalValue}>{formatCurrency(subtotal)}</Text>
+          <Text style={styles.totalValue}>{formatCurrency(visibleSubtotal)}</Text>
         </View>
       </View>
 
-      {part ? (
-        <View style={styles.noteCard}>
-          <View style={[styles.noteIconWrap, { backgroundColor: colors.successLight }]}>
-            <Icon name="package-variant-closed" size={18} color={colors.success} />
-          </View>
-          <View style={styles.noteCopy}>
-            <Text style={styles.noteTitle}>Verified part pricing</Text>
-            <Text style={styles.noteText}>Catalog price shown above.</Text>
-          </View>
+      <View style={styles.noteCard}>
+        <View style={[styles.noteIconWrap, { backgroundColor: '#EFF6FF' }]}>
+          <Icon name="clipboard-text-outline" size={18} color="#2563EB" />
         </View>
-      ) : null}
+        <View style={styles.noteCopy}>
+          <Text style={styles.noteTitle}>Calculated after inspection</Text>
+          <Text style={styles.noteText}>
+            Labour charge and replacement parts are finalized only after the technician inspects the issue and shares the final estimate for approval.
+          </Text>
+        </View>
+      </View>
 
       <View style={styles.noteCard}>
         <View style={[styles.noteIconWrap, { backgroundColor: BRAND_SOFT }]}>
@@ -513,6 +474,11 @@ const createStyles = (colors) => StyleSheet.create({
     color: colors.inkMuted,
     letterSpacing: 1.2,
     marginBottom: 6,
+  },
+  priceHeaderText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.inkSecondary,
   },
   priceList: {
     marginBottom: 6,

@@ -10,15 +10,184 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
-import { technicianJobs } from '../../technician/mockData';
+import { getTechnicianJobFlow } from '../../technician/jobFlowData';
 import { useTechScreenTheme } from '../../technician/theme';
 import {
   TechBadge,
   TechCard,
-  TechScreenHeader,
+  TechIconBubble,
 } from '../../technician/components/TechUi';
 
 const JOB_TABS = ['Active', 'Upcoming', 'Completed'];
+
+const createJobCard = ({
+  id,
+  service,
+  issue,
+  area,
+  slot,
+  amountText,
+  status,
+  statusTone,
+  type,
+  icon,
+  iconBg,
+  paymentDone = false,
+}) => ({
+  id,
+  title: service,
+  issue,
+  area,
+  slot,
+  visitText: amountText,
+  status,
+  statusTone,
+  type,
+  icon,
+  iconBg,
+  paymentDone,
+});
+
+const jobAc = getTechnicianJobFlow('job-ac');
+const jobElectric = getTechnicianJobFlow('job-electric');
+const jobPlumbing = getTechnicianJobFlow('job-plumbing');
+
+const JOBS_BY_TAB = {
+  Active: [
+    createJobCard({
+      id: jobAc.id,
+      service: jobAc.service,
+      issue: jobAc.issue,
+      area: jobAc.location.area,
+      slot: jobAc.scheduledSlot,
+      amountText: 'Accepted service',
+      status: 'In Progress',
+      statusTone: 'emerald',
+      type: 'Accepted',
+      icon: jobAc.serviceIcon,
+      iconBg: jobAc.serviceTone,
+    }),
+    createJobCard({
+      id: jobElectric.id,
+      service: jobElectric.service,
+      issue: jobElectric.issue,
+      area: jobElectric.location.area,
+      slot: jobElectric.scheduledSlot,
+      amountText: 'Accepted service',
+      status: 'En Route',
+      statusTone: 'amber',
+      type: 'Accepted',
+      icon: jobElectric.serviceIcon,
+      iconBg: jobElectric.serviceTone,
+    }),
+  ],
+  Upcoming: [
+    createJobCard({
+      id: jobPlumbing.id,
+      service: jobPlumbing.service,
+      issue: jobPlumbing.issue,
+      area: jobPlumbing.location.area,
+      slot: jobPlumbing.scheduledSlot,
+      amountText: 'Waiting for acceptance',
+      status: 'New',
+      statusTone: 'sky',
+      type: 'New request',
+      icon: jobPlumbing.serviceIcon,
+      iconBg: jobPlumbing.serviceTone,
+    }),
+  ],
+  Completed: [
+    createJobCard({
+      id: jobAc.id,
+      service: jobAc.service,
+      issue: jobAc.issue,
+      area: jobAc.location.area,
+      slot: 'Yesterday, 2:00 PM - 4:00 PM',
+      amountText: 'Customer total recorded',
+      status: 'Completed',
+      statusTone: 'emerald',
+      type: 'Past service',
+      icon: jobAc.serviceIcon,
+      iconBg: jobAc.serviceTone,
+      paymentDone: false,
+    }),
+  ],
+};
+
+const getJobsForTab = (activeTab) => {
+  return JOBS_BY_TAB[activeTab] || JOBS_BY_TAB.Active;
+};
+
+const getSecondaryAction = (activeTab, job) => {
+  if (activeTab === 'Completed' && job.paymentDone) {
+    return {
+      label: 'Receipt',
+      icon: 'file-document-outline',
+      onPressRoute: 'TechnicianJobCompletion',
+    };
+  }
+
+  if (activeTab === 'Upcoming') {
+    return {
+      label: 'Review',
+      icon: 'file-search-outline',
+      onPressRoute: 'TechnicianJobDetail',
+    };
+  }
+
+  if (job.status === 'En Route') {
+    return {
+      label: 'Route',
+      icon: 'map-marker-path',
+      onPressRoute: 'TechnicianEnRoute',
+    };
+  }
+
+  return {
+    label: 'Call',
+    icon: 'phone-outline',
+    onPressRoute: 'TechnicianJobDetail',
+  };
+};
+
+const getPrimaryAction = (activeTab, job) => {
+  if (activeTab === 'Completed') {
+    if (job.paymentDone) {
+      return null;
+    }
+
+    return {
+      label: 'Pending Payment',
+      route: 'TechnicianJobCompletion',
+    };
+  }
+
+  if (activeTab === 'Upcoming') {
+    return {
+      label: 'Review Job',
+      route: 'TechnicianJobDetail',
+    };
+  }
+
+  if (job.status === 'In Progress') {
+    return {
+      label: 'Open Live Job',
+      route: 'TechnicianJobInProgress',
+    };
+  }
+
+  if (job.status === 'En Route') {
+    return {
+      label: 'Open Route',
+      route: 'TechnicianEnRoute',
+    };
+  }
+
+  return {
+    label: 'View Job',
+    route: 'TechnicianJobDetail',
+  };
+};
 
 export default function TechnicianJobsScreen({ navigation }) {
   const {
@@ -28,11 +197,12 @@ export default function TechnicianJobsScreen({ navigation }) {
   } = useTechScreenTheme(createStyles);
   const [activeTab, setActiveTab] = useState('Active');
 
-  const list = activeTab === 'Completed'
-    ? [{ ...technicianJobs[0], status: 'Completed', statusTone: 'emerald', slot: 'Yesterday, 2:00 PM' }]
-    : activeTab === 'Upcoming'
-    ? [{ ...technicianJobs[1], status: 'Upcoming', statusTone: 'amber' }]
-    : technicianJobs;
+  const list = getJobsForTab(activeTab);
+  const tabCounts = {
+    Active: JOBS_BY_TAB.Active.length,
+    Upcoming: JOBS_BY_TAB.Upcoming.length,
+    Completed: JOBS_BY_TAB.Completed.length,
+  };
 
   return (
     <ScreenWrapper
@@ -41,94 +211,174 @@ export default function TechnicianJobsScreen({ navigation }) {
       statusBarStyle={statusBarStyle}
     >
       <SafeAreaView style={styles.screen}>
-        <TechScreenHeader title="My Jobs" />
-
         <ScrollView
-          style={styles.screen}
+          style={styles.scrollBody}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.tabsRow}>
-            {JOB_TABS.map((tab) => {
-              const isActive = tab === activeTab;
+          <View style={styles.topSection}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerCopy}>
+                <Text style={styles.headerTitle}>My Jobs</Text>
+              </View>
 
-              return (
-                <TouchableOpacity
-                  key={tab}
-                  activeOpacity={0.86}
-                  style={[styles.tabButton, isActive && styles.tabButtonActive]}
-                  onPress={() => setActiveTab(tab)}
-                >
-                  <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                    {tab}{tab === 'Active' ? ' (2)' : ''}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+              <TouchableOpacity
+                activeOpacity={0.88}
+                style={styles.headerIconButton}
+                onPress={() => navigation.navigate('TechnicianJobAlert')}
+              >
+                <Icon
+                  name="bell-ring-outline"
+                  size={20}
+                  color={TECH_COLORS.text}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.tabsShell}>
+            <View style={styles.tabsRow}>
+              {JOB_TABS.map((tab) => {
+                const isActive = tab === activeTab;
+
+                return (
+                  <TouchableOpacity
+                    key={tab}
+                    activeOpacity={0.88}
+                    style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                    onPress={() => setActiveTab(tab)}
+                  >
+                    <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                      {tab}
+                    </Text>
+                    <View
+                      style={[
+                        styles.tabCountPill,
+                        isActive && styles.tabCountPillActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.tabCountText,
+                          isActive && styles.tabCountTextActive,
+                        ]}
+                      >
+                        {tabCounts[tab]}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {activeTab === 'Active'
+                ? 'Accepted Services'
+                : activeTab === 'Upcoming'
+                  ? 'New Requests'
+                  : 'Completed Services'}
+            </Text>
+            <Text style={styles.sectionAction}>
+              {list.length} {list.length === 1 ? 'job' : 'jobs'}
+            </Text>
           </View>
 
           {list.map((job, index) => {
             const highlighted = activeTab === 'Active' && index === 0;
+            const secondaryAction = getSecondaryAction(activeTab, job);
+            const primaryAction = getPrimaryAction(activeTab, job);
+            const showSingleCompletedAction = activeTab === 'Completed';
 
             return (
               <TechCard
                 key={`${activeTab}-${job.id}-${index}`}
                 style={[styles.jobCard, highlighted && styles.highlightedCard]}
               >
-                <View style={styles.cardTop}>
+                <View style={styles.jobAccentBar} />
+
+                <View style={styles.cardTopRow}>
+                  <View style={styles.jobIdentity}>
+                    <TechIconBubble icon={job.icon} tone={job.iconBg} size={48} />
+
+                    <View style={styles.jobCopyBlock}>
+                      <Text style={styles.jobTitle}>{job.title}</Text>
+                      <Text style={styles.jobIssue}>{job.issue}</Text>
+                    </View>
+                  </View>
+
                   <TechBadge label={job.status} tone={job.statusTone} />
-                  <Text style={styles.slotText}>{job.slot}</Text>
                 </View>
 
-                <Text style={styles.jobTitle}>{job.title} - {job.issue}</Text>
-                <Text style={styles.areaText}>📍 {job.area}</Text>
+                <View style={styles.locationRow}>
+                  <Icon name="map-marker-outline" size={15} color={TECH_COLORS.textMuted} />
+                  <Text style={styles.locationValue}>{job.area}</Text>
+                </View>
 
-                <View style={styles.cardDivider} />
+                <View style={styles.metaRow}>
+                  <View style={styles.metaChip}>
+                    <Icon name="clock-outline" size={14} color={TECH_COLORS.gold} />
+                    <Text style={styles.metaChipText}>{job.slot}</Text>
+                  </View>
+
+                  <View style={styles.metaChip}>
+                    <Icon name="cash-multiple" size={14} color={TECH_COLORS.emerald} />
+                    <Text style={styles.metaChipText}>{job.visitText}</Text>
+                  </View>
+
+                  <View style={styles.metaChip}>
+                    <Icon name="briefcase-outline" size={14} color={TECH_COLORS.sky} />
+                    <Text style={styles.metaChipText}>{job.type}</Text>
+                  </View>
+                </View>
 
                 <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    activeOpacity={0.86}
-                    style={styles.actionButtonMuted}
-                    onPress={() => {}}
-                  >
-                    <Icon
-                      name={activeTab === 'Upcoming' ? 'map-marker-outline' : 'phone-outline'}
-                      size={15}
-                      color={TECH_COLORS.textSecondary}
-                    />
-                    <Text style={styles.actionMutedText}>
-                      {activeTab === 'Upcoming' ? 'Map' : 'Call'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    style={[
-                      styles.actionButtonPrimary,
-                      job.statusTone === 'emerald' && { backgroundColor: TECH_COLORS.emerald },
-                    ]}
-                    onPress={() => navigation.navigate(
-                      activeTab === 'Completed'
-                        ? 'TechnicianJobCompletion'
-                        : job.status === 'En Route'
-                        ? 'TechnicianEnRoute'
-                        : 'TechnicianJobDetail',
-                    )}
-                  >
-                    <Text
+                  {showSingleCompletedAction ? (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
                       style={[
-                        styles.actionPrimaryText,
-                        job.statusTone === 'emerald' && { color: TECH_COLORS.bg },
+                        styles.actionButtonPrimary,
+                        styles.singleActionButton,
                       ]}
+                      onPress={() => navigation.navigate(
+                        job.paymentDone ? secondaryAction.onPressRoute : primaryAction.route,
+                        { jobId: job.id },
+                      )}
                     >
-                      View Job
-                    </Text>
-                    <Icon
-                      name="arrow-right"
-                      size={16}
-                      color={job.statusTone === 'emerald' ? TECH_COLORS.bg : TECH_COLORS.white}
-                    />
-                  </TouchableOpacity>
+                      <Text style={styles.actionPrimaryText}>
+                        {job.paymentDone ? secondaryAction.label : primaryAction.label}
+                      </Text>
+                      <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        activeOpacity={0.86}
+                        style={styles.actionButtonMuted}
+                        onPress={() => navigation.navigate(secondaryAction.onPressRoute, { jobId: job.id })}
+                      >
+                        <Icon
+                          name={secondaryAction.icon}
+                          size={15}
+                          color={TECH_COLORS.textSecondary}
+                        />
+                        <Text style={styles.actionMutedText}>{secondaryAction.label}</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[
+                          styles.actionButtonPrimary,
+                          highlighted && styles.actionButtonPrimaryHighlighted,
+                        ]}
+                        onPress={() => navigation.navigate(primaryAction.route, { jobId: job.id })}
+                      >
+                        <Text style={styles.actionPrimaryText}>{primaryAction.label}</Text>
+                        <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </TechCard>
             );
@@ -142,79 +392,211 @@ export default function TechnicianJobsScreen({ navigation }) {
 const createStyles = ({
   colors: TECH_COLORS,
   radius: TECH_RADIUS,
+  shadows: TECH_SHADOWS,
+  isDark,
 }) => StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: TECH_COLORS.bg,
   },
-  content: {
-    paddingHorizontal: 20,
-    paddingBottom: 120,
+  scrollBody: {
+    flex: 1,
+    backgroundColor: TECH_COLORS.bg,
   },
-  tabsRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: TECH_COLORS.border,
-    marginBottom: 16,
+    content: {
+      paddingBottom: 120,
+    },
+    topSection: {
+      paddingHorizontal: 20,
+      paddingTop: 14,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 14,
+    },
+    headerCopy: {
+      flex: 1,
+    },
+    headerTitle: {
+      fontSize: 28,
+      lineHeight: 32,
+      fontWeight: '900',
+      color: TECH_COLORS.text,
+      letterSpacing: -0.7,
+    },
+    headerIconButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: TECH_COLORS.card,
+      borderWidth: 1,
+      borderColor: TECH_COLORS.border,
+      ...TECH_SHADOWS.card,
+    },
+    tabsShell: {
+      paddingHorizontal: 20,
+      marginTop: 12,
+    },
+    tabsRow: {
+      flexDirection: 'row',
+    backgroundColor: TECH_COLORS.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: TECH_COLORS.border,
+    padding: 6,
+    ...TECH_SHADOWS.card,
   },
   tabButton: {
     flex: 1,
+    minHeight: 46,
+    borderRadius: 16,
     alignItems: 'center',
-    paddingVertical: 12,
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
-  tabButtonActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: TECH_COLORS.coral,
-  },
+    tabButtonActive: {
+      backgroundColor: isDark ? TECH_COLORS.float : TECH_COLORS.cardAlt,
+      borderWidth: 1,
+      borderColor: TECH_COLORS.borderStrong,
+    },
   tabText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: TECH_COLORS.textMuted,
   },
-  tabTextActive: {
+    tabTextActive: {
+      color: TECH_COLORS.text,
+    },
+  tabCountPill: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    backgroundColor: TECH_COLORS.float,
+  },
+    tabCountPillActive: {
+      backgroundColor: TECH_COLORS.coralTint,
+    },
+  tabCountText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: TECH_COLORS.textSecondary,
+  },
+    tabCountTextActive: {
+      color: TECH_COLORS.coral,
+    },
+  sectionHeader: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: TECH_COLORS.text,
+    letterSpacing: -0.4,
+  },
+  sectionAction: {
+    fontSize: 12,
+    fontWeight: '700',
     color: TECH_COLORS.coral,
   },
   jobCard: {
+    marginHorizontal: 20,
+    marginBottom: 12,
     padding: 16,
-    marginBottom: 10,
+    overflow: 'hidden',
   },
   highlightedCard: {
-    borderColor: 'rgba(16,217,160,0.36)',
+    borderColor: 'rgba(16,217,160,0.32)',
     shadowColor: TECH_COLORS.emerald,
     shadowOpacity: 0.18,
   },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+  jobAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: TECH_COLORS.coral,
   },
-  slotText: {
-    fontSize: 11,
-    color: TECH_COLORS.textMuted,
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  jobIdentity: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  jobCopyBlock: {
+    flex: 1,
   },
   jobTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: TECH_COLORS.text,
+    letterSpacing: -0.3,
   },
-  areaText: {
-    marginTop: 4,
+  jobIssue: {
+    marginTop: 3,
+    fontSize: 12,
+    color: TECH_COLORS.textSecondary,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  locationValue: {
+    marginLeft: 6,
     fontSize: 12,
     color: TECH_COLORS.textMuted,
+    flex: 1,
   },
-  cardDivider: {
-    height: 1,
-    backgroundColor: TECH_COLORS.border,
-    marginVertical: 12,
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: TECH_COLORS.float,
+    borderWidth: 1,
+    borderColor: TECH_COLORS.border,
+  },
+  metaChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: TECH_COLORS.textSecondary,
   },
   actionRow: {
     flexDirection: 'row',
     gap: 8,
+    marginTop: 14,
   },
   actionButtonMuted: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 44,
     borderRadius: TECH_RADIUS.md,
     borderWidth: 1,
     borderColor: TECH_COLORS.border,
@@ -230,14 +612,21 @@ const createStyles = ({
     color: TECH_COLORS.textSecondary,
   },
   actionButtonPrimary: {
-    flex: 2,
-    minHeight: 42,
+    flex: 1.4,
+    minHeight: 44,
     borderRadius: TECH_RADIUS.md,
     backgroundColor: TECH_COLORS.coral,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    ...TECH_SHADOWS.glow,
+  },
+  actionButtonPrimaryHighlighted: {
+    backgroundColor: TECH_COLORS.emerald,
+  },
+  singleActionButton: {
+    flex: 1,
   },
   actionPrimaryText: {
     fontSize: 12,
