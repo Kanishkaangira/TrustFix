@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import TechnicianBottomNav from './TechnicianBottomNav';
 import TechnicianOtpPreviewScreen from '../Screens/Technician/TechnicianOtpPreviewScreen';
 import TechnicianJobAlertScreen from '../Screens/Technician/TechnicianJobAlertScreen';
-import TechnicianJobDetailScreen from '../Screens/Technician/JobFlow/JobDetailScreen';
+import TechnicianJobDetailScreen from '../Screens/Technician/TechnicianJobDetailScreen';
 import TechnicianEnRouteScreen from '../Screens/Technician/JobFlow/EnRouteScreen';
 import TechnicianSafetyOtpScreen from '../Screens/Technician/JobFlow/SafetyOtpScreen';
 import TechnicianJobInProgressScreen from '../Screens/Technician/JobFlow/JobProgressScreen';

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -7,52 +8,109 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
+import { fetchTechnicianEarnings } from '../../technician/earningsStore';
 import {
-  earningsSummary,
-  earningsTransactions,
-} from '../../technician/mockData';
+  getTechnicianProfile,
+  subscribeToTechnicianProfile,
+  syncTechnicianProfileFromRemote,
+} from '../../technician/profileStore';
 import { useTechScreenTheme } from '../../technician/theme';
 import { TechCard } from '../../technician/components/TechUi';
 
-const PERIODS = ['Daily', 'Weekly', 'Monthly'];
+const PERIODS = ['Daily', 'Total'];
 
 export default function TechnicianEarningsScreen() {
   const {
     colors: TECH_COLORS,
-    gradients: TECH_GRADIENTS,
     getTone: getTechTone,
     statusBarStyle,
     styles,
   } = useTechScreenTheme(createStyles);
   const [period, setPeriod] = useState('Daily');
+  const [earningsData, setEarningsData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [profile, setProfile] = useState(() => getTechnicianProfile());
+
+  const loadEarnings = useCallback(async (showLoader = true) => {
+    if (showLoader) {
+      setIsLoading(true);
+    }
+
+    const result = await fetchTechnicianEarnings();
+
+    if (result.error) {
+      setErrorMessage(result.error.message || 'Could not load earnings right now.');
+    } else {
+      setEarningsData(result.data);
+      setErrorMessage('');
+    }
+
+    if (showLoader) {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEarnings(true);
+  }, [loadEarnings]);
+
+  useEffect(() => {
+    syncTechnicianProfileFromRemote();
+    return subscribeToTechnicianProfile(setProfile);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadEarnings(false);
+    }, [loadEarnings]),
+  );
+
+  const selectedPeriod = useMemo(
+    () => earningsData?.periods?.[period] || {
+      label: period,
+      totalValue: '₹0',
+      subtitle: 'No settled payouts yet',
+      jobsDone: '0',
+      commissionValue: '₹0',
+      transactions: [],
+    },
+    [earningsData, period],
+  );
+  const sectionTitle = period === 'Daily' ? 'Today\'s Transactions' : 'All Settled Transactions';
+  const profileLabel = String(profile.name || 'Technician').trim();
+  const planLabel = String(profile.plan || '').trim();
 
   return (
     <ScreenWrapper
-      topColor={TECH_COLORS.bg}
+      topColor="#FF6B35"
       bottomColor={TECH_COLORS.bg}
       statusBarStyle={statusBarStyle}
     >
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={styles.safeArea}>
         <ScrollView
           style={styles.screen}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
           <LinearGradient
-            colors={TECH_GRADIENTS.brand}
+            colors={['#FF6B35', '#FF7A42', '#FF8C58']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.hero}
           >
             <View style={styles.heroOrb} />
             <Text style={styles.heroTitle}>My Earnings</Text>
-            <Text style={styles.heroSub}>{earningsSummary.month}</Text>
-            <Text style={styles.heroValue}>{earningsSummary.total}</Text>
-            <Text style={styles.heroFoot}>{earningsSummary.subtitle}</Text>
+            <Text style={styles.heroSub}>{profileLabel}{planLabel ? ` • ${planLabel}` : ''}</Text>
+            <Text style={styles.heroValue}>{selectedPeriod.totalValue}</Text>
+            <Text style={styles.heroFoot}>
+              {earningsData?.monthLabel || 'Technician payouts'} • {selectedPeriod.subtitle}
+            </Text>
           </LinearGradient>
 
           <View style={styles.periodRow}>
@@ -73,24 +131,45 @@ export default function TechnicianEarningsScreen() {
 
           <View style={styles.statsRow}>
             <View style={styles.statCell}>
-              <Text style={[styles.statValue, { color: TECH_COLORS.gold }]}>{earningsSummary.today}</Text>
-              <Text style={styles.statLabel}>Today</Text>
+              <Text style={[styles.statValue, { color: TECH_COLORS.gold }]}>{selectedPeriod.totalValue}</Text>
+              <Text style={styles.statLabel}>{period}</Text>
             </View>
             <View style={styles.statCell}>
-              <Text style={styles.statValue}>{earningsSummary.jobsDone}</Text>
+              <Text style={styles.statValue}>{selectedPeriod.jobsDone}</Text>
               <Text style={styles.statLabel}>Jobs Done</Text>
             </View>
             <View style={styles.statCell}>
               <Text style={[styles.statValue, { color: TECH_COLORS.emerald }]}>
-                {earningsSummary.commission}
+                {selectedPeriod.commissionValue}
               </Text>
               <Text style={styles.statLabel}>Commission</Text>
             </View>
           </View>
 
-          <Text style={styles.eyebrow}>Today&apos;s Transactions</Text>
+          <Text style={styles.eyebrow}>{sectionTitle}</Text>
 
-          {earningsTransactions.map((item) => {
+          {isLoading ? (
+            <TechCard style={styles.stateCard}>
+              <ActivityIndicator color={TECH_COLORS.coral} />
+              <Text style={styles.stateText}>Loading earnings</Text>
+            </TechCard>
+          ) : null}
+
+          {!isLoading && errorMessage ? (
+            <TechCard style={styles.stateCard}>
+              <Icon name="alert-circle-outline" size={20} color={TECH_COLORS.coral} />
+              <Text style={styles.stateText}>{errorMessage}</Text>
+            </TechCard>
+          ) : null}
+
+          {!isLoading && !errorMessage && !selectedPeriod.transactions.length ? (
+            <TechCard style={styles.stateCard}>
+              <Icon name="cash-remove" size={20} color={TECH_COLORS.textMuted} />
+              <Text style={styles.stateText}>No settled payouts found for this period.</Text>
+            </TechCard>
+          ) : null}
+
+          {!isLoading && !errorMessage && selectedPeriod.transactions.map((item) => {
             const tone = getTechTone(item.iconBg);
 
             return (
@@ -127,6 +206,10 @@ export default function TechnicianEarningsScreen() {
 }
 
 const createStyles = ({ colors: TECH_COLORS }) => StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FF6B35',
+  },
   screen: {
     flex: 1,
     backgroundColor: TECH_COLORS.bg,
@@ -148,6 +231,21 @@ const createStyles = ({ colors: TECH_COLORS }) => StyleSheet.create({
     height: 200,
     borderRadius: 100,
     backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  stateCard: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  stateText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: TECH_COLORS.textSecondary,
+    textAlign: 'center',
   },
   heroTitle: {
     fontSize: 26,

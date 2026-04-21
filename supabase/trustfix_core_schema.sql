@@ -176,7 +176,6 @@ create table if not exists public.bookings (
   booking_number text not null unique default public.generate_booking_number(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   technician_id uuid,
-  technician_service_id uuid,
   address_id uuid references public.addresses(id) on delete set null,
   service_id uuid not null references public.services(id) on delete restrict,
   service_problem_id uuid references public.service_problems(id) on delete set null,
@@ -201,6 +200,13 @@ create table if not exists public.bookings (
   inspection_started_at timestamptz,
   estimate_sent_at timestamptz,
   estimate_approved_at timestamptz,
+  estimate_rework_requested_at timestamptz,
+  estimate_version_no integer not null default 0,
+  proposed_labour_charge numeric(10, 2) not null default 0,
+  proposed_parts_charge numeric(10, 2) not null default 0,
+  proposed_invoice_total numeric(10, 2) not null default 0,
+  estimate_note text,
+  estimate_response_note text,
   work_started_at timestamptz,
   work_completed_at timestamptz,
   payment_requested_at timestamptz,
@@ -235,6 +241,7 @@ create table if not exists public.bookings (
         'arrived',
         'otp_verified',
         'estimate_sent',
+        'estimate_revision_requested',
         'estimate_approved',
         'in_progress',
         'work_completed',
@@ -305,6 +312,7 @@ create table if not exists public.booking_status_history (
         'arrived',
         'otp_verified',
         'estimate_sent',
+        'estimate_revision_requested',
         'estimate_approved',
         'in_progress',
         'work_completed',
@@ -313,6 +321,31 @@ create table if not exists public.booking_status_history (
         'cancelled'
       )
     )
+);
+
+create table if not exists public.booking_verification_otps (
+  id uuid primary key default gen_random_uuid(),
+  booking_id uuid not null references public.bookings(id) on delete cascade,
+  purpose text not null default 'arrival_verification',
+  otp_code text not null,
+  status text not null default 'generated',
+  generated_for_phone text,
+  generated_by_technician_id uuid references auth.users(id) on delete set null,
+  verified_by_technician_id uuid references auth.users(id) on delete set null,
+  attempt_count integer not null default 0,
+  expires_at timestamptz not null,
+  last_attempt_at timestamptz,
+  verified_at timestamptz,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint booking_verification_otps_purpose_chk
+    check (purpose in ('arrival_verification', 'completion_verification')),
+  constraint booking_verification_otps_status_chk
+    check (status in ('generated', 'verified', 'expired', 'cancelled')),
+  constraint booking_verification_otps_code_format_chk
+    check (otp_code ~ '^[0-9]{4,6}$'),
+  constraint booking_verification_otps_attempt_count_chk
+    check (attempt_count >= 0)
 );
 
 create index if not exists addresses_user_id_idx
@@ -341,9 +374,6 @@ create index if not exists bookings_user_id_created_at_idx
 create index if not exists bookings_technician_id_idx
   on public.bookings(technician_id, created_at desc);
 
-create index if not exists bookings_technician_service_id_idx
-  on public.bookings(technician_service_id, created_at desc);
-
 create index if not exists bookings_address_id_idx
   on public.bookings(address_id);
 
@@ -355,6 +385,12 @@ create index if not exists bookings_status_idx
 
 create index if not exists booking_status_history_booking_id_created_at_idx
   on public.booking_status_history(booking_id, created_at desc);
+
+create index if not exists booking_verification_otps_booking_id_created_at_idx
+  on public.booking_verification_otps(booking_id, created_at desc);
+
+create index if not exists booking_verification_otps_status_expires_at_idx
+  on public.booking_verification_otps(status, expires_at desc);
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -547,6 +583,14 @@ begin
     new.address_snapshot = null;
   end if;
 
+  if new.severity = 'moderate'
+    and nullif(btrim(coalesce(new.scheduled_slot_label, '')), '') is null then
+    new.scheduled_slot_label = 'Within 24 hours';
+  elsif new.severity = 'urgent'
+    and nullif(btrim(coalesce(new.scheduled_slot_label, '')), '') is null then
+    new.scheduled_slot_label = '15-30 mins';
+  end if;
+
   new.urgency_surcharge = 0;
 
   new.protection_fee = case
@@ -675,6 +719,12 @@ create trigger bookings_set_updated_at
   for each row
   execute procedure public.set_updated_at();
 
+drop trigger if exists booking_verification_otps_set_updated_at on public.booking_verification_otps;
+create trigger booking_verification_otps_set_updated_at
+  before update on public.booking_verification_otps
+  for each row
+  execute procedure public.set_updated_at();
+
 drop trigger if exists addresses_single_default_trigger on public.addresses;
 create trigger addresses_single_default_trigger
   before insert or update on public.addresses
@@ -707,6 +757,7 @@ alter table public.booking_severity_pricing enable row level security;
 alter table public.booking_checkout_sessions enable row level security;
 alter table public.bookings enable row level security;
 alter table public.booking_status_history enable row level security;
+alter table public.booking_verification_otps enable row level security;
 
 revoke all on table public.profiles from anon, authenticated;
 revoke all on table public.addresses from anon, authenticated;
@@ -716,6 +767,7 @@ revoke all on table public.booking_severity_pricing from anon, authenticated;
 revoke all on table public.booking_checkout_sessions from anon, authenticated;
 revoke all on table public.bookings from anon, authenticated;
 revoke all on table public.booking_status_history from anon, authenticated;
+revoke all on table public.booking_verification_otps from anon, authenticated;
 
 grant select, insert, update on table public.profiles to authenticated;
 grant select, insert, update, delete on table public.addresses to authenticated;
@@ -725,6 +777,7 @@ grant select on table public.booking_severity_pricing to authenticated;
 grant select on table public.booking_checkout_sessions to authenticated;
 grant select, update on table public.bookings to authenticated;
 grant select on table public.booking_status_history to authenticated;
+grant select on table public.booking_verification_otps to authenticated;
 
 drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
@@ -865,6 +918,20 @@ using (
     select 1
     from public.bookings b
     where b.id = booking_status_history.booking_id
+      and b.user_id = (select auth.uid())
+  )
+);
+
+drop policy if exists "booking_verification_otps_select_owner" on public.booking_verification_otps;
+create policy "booking_verification_otps_select_owner"
+on public.booking_verification_otps
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.bookings b
+    where b.id = booking_verification_otps.booking_id
       and b.user_id = (select auth.uid())
   )
 );

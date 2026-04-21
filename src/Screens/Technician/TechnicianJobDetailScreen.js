@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -34,7 +34,15 @@ const formatSeverityLabel = (value) => {
     return 'Not set';
   }
 
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  if (normalized === 'moderate') {
+    return 'Urgency';
+  }
+
+  if (normalized === 'urgent') {
+    return 'Urgent';
+  }
+
+  return 'Minor';
 };
 
 const formatSchedule = (booking = {}) => {
@@ -65,7 +73,16 @@ const formatStatusTone = (assignmentStatus, bookingStatus) => {
     return { label: 'Completed', tone: 'emerald' };
   }
 
-  if (['accepted', 'en_route', 'arrived', 'otp_verified', 'in_progress'].includes(bookingStatus)) {
+  if ([
+    'accepted',
+    'en_route',
+    'arrived',
+    'otp_verified',
+    'estimate_sent',
+    'estimate_revision_requested',
+    'estimate_approved',
+    'in_progress',
+  ].includes(bookingStatus)) {
     return { label: 'Accepted', tone: 'emerald' };
   }
 
@@ -79,6 +96,34 @@ const getCustomerInitials = (name) => {
     .filter(Boolean);
 
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'CU';
+};
+
+const getDetailCtaConfig = (assignmentStatus, bookingStatus) => {
+  if ([
+    'otp_verified',
+    'estimate_sent',
+    'estimate_revision_requested',
+    'estimate_approved',
+    'in_progress',
+    'work_completed',
+  ].includes(bookingStatus)) {
+    return {
+      label: 'Open Job Progress',
+      route: 'TechnicianJobInProgress',
+    };
+  }
+
+  if (bookingStatus === 'arrived') {
+    return {
+      label: 'Open OTP',
+      route: 'TechnicianSafetyOtp',
+    };
+  }
+
+  return {
+    label: 'Open Route',
+    route: 'TechnicianEnRoute',
+  };
 };
 
 export default function TechnicianJobDetailScreen({ navigation, route }) {
@@ -133,21 +178,7 @@ export default function TechnicianJobDetailScreen({ navigation, route }) {
   const scheduleLabel = formatSchedule(booking);
   const severityLabel = formatSeverityLabel(booking.severity);
   const serviceName = String(booking.service_name_snapshot || 'Service request').trim();
-  const amountRows = useMemo(() => ([
-    { label: 'Visit charge', value: formatCurrency(booking.visit_charge) },
-    { label: 'Platform fee', value: formatCurrency(booking.platform_fee) },
-    { label: 'Repair protection', value: booking.protection_selected ? formatCurrency(booking.protection_fee) : 'Not selected' },
-    { label: 'Urgency surcharge', value: Number(booking.urgency_surcharge || 0) > 0 ? formatCurrency(booking.urgency_surcharge) : 'Not applied' },
-    { label: 'Initial total', value: formatCurrency(booking.estimated_total), tone: 'emerald' },
-  ]), [
-    booking.estimated_total,
-    booking.platform_fee,
-    booking.protection_fee,
-    booking.protection_selected,
-    booking.urgency_surcharge,
-    booking.visit_charge,
-  ]);
-
+  const ctaConfig = getDetailCtaConfig(assignment.status, String(booking.status || '').trim());
   return (
     <ScreenWrapper
       topColor={TECH_COLORS.bg}
@@ -251,42 +282,37 @@ export default function TechnicianJobDetailScreen({ navigation, route }) {
                 <TechCard style={styles.infoCard}>
                   <TechRow label="Booking number" value={booking.booking_number || '-'} />
                   <View style={styles.divider} />
+                  <TechRow label="Service" value={serviceName} />
+                  <View style={styles.divider} />
                   <TechRow label="Problem type" value={severityLabel} />
                   <View style={styles.divider} />
                   <TechRow label="Problem" value={problemLabel} />
                   <View style={styles.divider} />
                   <TechRow label="Scheduled slot" value={scheduleLabel} />
                   <View style={styles.divider} />
-                  <TechRow label="Booking status" value={String(booking.status || 'pending').replace(/_/g, ' ')} />
+                  <TechRow label="Visit charge" value={formatCurrency(booking.visit_charge)} />
                   <View style={styles.divider} />
-                  <TechRow label="Payment status" value={String(booking.payment_status || 'pending').replace(/_/g, ' ')} />
+                  <TechRow label="Platform fee" value={formatCurrency(booking.platform_fee)} />
+                  <View style={styles.divider} />
+                  <TechRow
+                    label="Protection"
+                    value={booking.protection_selected ? formatCurrency(booking.protection_fee) : 'Not selected'}
+                  />
+                  <View style={styles.divider} />
+                  <TechRow label="Initial total" value={formatCurrency(booking.estimated_total)} tone="emerald" />
                 </TechCard>
               </View>
 
-              <View style={styles.sectionWrap}>
-                <Text style={styles.eyebrow}>Initial Charges</Text>
-                <TechCard style={styles.infoCard}>
-                  {amountRows.map((row, index) => (
-                    <View key={row.label}>
-                      <TechRow label={row.label} value={row.value} tone={row.tone} />
-                      {index < amountRows.length - 1 ? <View style={styles.divider} /> : null}
-                    </View>
-                  ))}
-                </TechCard>
-              </View>
-
-              <TechGradientButton
-                label={assignment.status === 'accepted' ? "I'm On My Way" : 'Back to Jobs'}
-                variant="emerald"
-                onPress={() => {
-                  if (assignment.status === 'accepted') {
-                    navigation.navigate('TechnicianEnRoute', { jobId: bookingId });
-                    return;
-                  }
-
-                  navigation.goBack();
-                }}
-              />
+              <TechCard style={styles.ctaCard}>
+                <TechGradientButton
+                  label={ctaConfig.label}
+                  variant="emerald"
+                  style={styles.ctaButton}
+                  onPress={() => {
+                    navigation.navigate(ctaConfig.route, { jobId: bookingId });
+                  }}
+                />
+              </TechCard>
             </>
           ) : null}
         </ScrollView>
@@ -456,6 +482,13 @@ const createStyles = ({
   infoCard: {
     paddingHorizontal: 16,
     paddingVertical: 2,
+  },
+  ctaCard: {
+    marginTop: 18,
+    padding: 16,
+  },
+  ctaButton: {
+    width: '100%',
   },
   divider: {
     height: 1,

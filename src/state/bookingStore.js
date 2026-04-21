@@ -33,6 +33,19 @@ const normalizeBookingRecord = (record = {}) => ({
   visitCharge: Number(record.visit_charge || 0),
   platformFee: Number(record.platform_fee || 0),
   protectionFee: Number(record.protection_fee || 0),
+  urgencySurcharge: Number(record.urgency_surcharge || 0),
+  proposedLabourCharge: Number(record.proposed_labour_charge || 0),
+  proposedPartsCharge: Number(record.proposed_parts_charge || 0),
+  proposedInvoiceTotal: Number(record.proposed_invoice_total || 0),
+  estimateNote: String(record.estimate_note || '').trim(),
+  estimateResponseNote: String(record.estimate_response_note || '').trim(),
+  estimateVersionNo: Number(record.estimate_version_no || 0),
+  estimateSentAt: record.estimate_sent_at || null,
+  estimateApprovedAt: record.estimate_approved_at || null,
+  estimateReworkRequestedAt: record.estimate_rework_requested_at || null,
+  finalLabourCharge: Number(record.final_labour_charge || 0),
+  finalPartsCharge: Number(record.final_parts_charge || 0),
+  finalInvoiceTotal: Number(record.final_invoice_total || 0),
   addressLabel: String(record.address_label_snapshot || '').trim(),
   address: String(record.address_snapshot || '').trim(),
   scheduledDate: record.scheduled_date || null,
@@ -280,6 +293,44 @@ export const cancelBooking = async (bookingId) => {
     );
 
     return { data: nextBooking, error: null };
+  } catch (_) {
+    return {
+      data: null,
+      error: { message: 'Please check your internet connection.' },
+    };
+  }
+};
+
+export const respondToBookingEstimate = async ({
+  bookingId,
+  action,
+  note,
+}) => {
+  try {
+    const trimmedBookingId = String(bookingId || '').trim();
+
+    if (!trimmedBookingId) {
+      return { data: null, error: { message: 'Booking not found.' } };
+    }
+
+    const result = await supabase.functions.invoke('respond-booking-estimate', {
+      body: {
+        bookingId: trimmedBookingId,
+        action,
+        note,
+      },
+    });
+
+    if (result.error) {
+      return { data: null, error: result.error };
+    }
+
+    await syncBookingsFromRemote();
+
+    return {
+      data: result.data?.booking ? normalizeBookingRecord(result.data.booking) : null,
+      error: null,
+    };
   } catch (_) {
     return {
       data: null,

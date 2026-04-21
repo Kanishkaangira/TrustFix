@@ -30,7 +30,6 @@ export default function JobCompletionScreen({ navigation, route }) {
   } = useTechScreenTheme(createStyles);
   const job = getTechnicianJobFlow(route?.params?.jobId);
   const estimateDraft = route?.params?.estimateDraft || createEstimateDraft(job);
-  const completionState = route?.params?.completionState || {};
   const financials = buildJobFinancials({ job, estimateDraft });
 
   return (
@@ -115,28 +114,6 @@ export default function JobCompletionScreen({ navigation, route }) {
               </Text>
             </View>
           </View>
-
-          <Text style={styles.eyebrow}>Completion Snapshot</Text>
-          <TechCard style={styles.snapshotCard}>
-            <Text style={styles.snapshotLabel}>Diagnosis shared with customer</Text>
-            <Text style={styles.snapshotText}>{estimateDraft.diagnosis}</Text>
-
-            <View style={styles.snapshotDivider} />
-
-            <Text style={styles.snapshotLabel}>Checklist completed</Text>
-            <Text style={styles.snapshotText}>
-              {Array.isArray(completionState.checklist)
-                ? `${completionState.checklist.filter((item) => item.complete).length}/${completionState.checklist.length} tasks marked done`
-                : 'Final service checklist completed'}
-            </Text>
-
-            <View style={styles.snapshotDivider} />
-
-            <Text style={styles.snapshotLabel}>After photos</Text>
-            <Text style={styles.snapshotText}>
-              {completionState.afterPhotos || 0} uploaded before completion
-            </Text>
-          </TechCard>
 
           <TechGradientButton
             label="Submit Completion & Trigger Online Payment"
@@ -266,27 +243,6 @@ const createStyles = ({
     fontSize: 13,
     fontWeight: '800',
     color: TECH_COLORS.text,
-  },
-  snapshotCard: {
-    padding: 16,
-  },
-  snapshotLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    color: TECH_COLORS.textMuted,
-    textTransform: 'uppercase',
-  },
-  snapshotText: {
-    marginTop: 5,
-    fontSize: 13,
-    lineHeight: 19,
-    color: TECH_COLORS.textSecondary,
-  },
-  snapshotDivider: {
-    height: 1,
-    backgroundColor: TECH_COLORS.border,
-    marginVertical: 12,
   },
   primaryAction: {
     marginTop: 18,

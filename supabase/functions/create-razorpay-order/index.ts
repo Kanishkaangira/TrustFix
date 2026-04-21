@@ -296,6 +296,22 @@ Deno.serve(async (req) => {
     if (!bookingRecord) {
       return json({ error: 'Booking not found.' }, 404);
     }
+
+    const finalInvoiceStatus = String(bookingRecord.status ?? '').trim();
+    const finalInvoiceTotal = Number(bookingRecord.final_invoice_total ?? 0);
+    const finalPaymentStatus = String(bookingRecord.payment_status ?? '').trim();
+
+    if (!['estimate_approved', 'in_progress', 'payment_pending'].includes(finalInvoiceStatus)) {
+      return json({ error: 'Final bill is not ready for payment yet.' }, 400);
+    }
+
+    if (finalPaymentStatus === 'paid') {
+      return json({ error: 'This final bill has already been paid.' }, 400);
+    }
+
+    if (finalInvoiceTotal <= 0) {
+      return json({ error: 'Final bill amount is not available yet.' }, 400);
+    }
   }
 
   if (paymentStage === 'final_invoice') {
@@ -306,7 +322,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     completionReport = completionReportData ?? null;
-    technicianId = completionReportData?.technician_id ?? null;
+    technicianId = completionReportData?.technician_id ?? bookingRecord?.technician_id ?? null;
   }
 
   const amount = paymentStage === 'booking_fee'

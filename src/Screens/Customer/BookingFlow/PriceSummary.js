@@ -74,12 +74,6 @@ const buildVisibleFeeRows = ({ visitCharge, platformFee, severity, colors }) => 
     icon: severity === 'urgent' ? 'flash-outline' : 'home-account',
     label: 'Visit charge',
     value: visitCharge,
-    sublabel:
-      severity === 'urgent'
-        ? 'Includes urgent dispatch priority'
-        : severity === 'moderate'
-          ? 'Includes same-day dispatch priority'
-          : 'Applies to technician visit and inspection',
     tone: BRAND_ORANGE,
     bg: BRAND_SOFT,
   },
@@ -88,7 +82,6 @@ const buildVisibleFeeRows = ({ visitCharge, platformFee, severity, colors }) => 
     icon: 'receipt-text-outline',
     label: 'Platform fee',
     value: platformFee,
-    sublabel: 'Supports booking ops, support, and platform handling',
     tone: colors.inkSecondary,
     bg: colors.surfaceMuted,
   },
@@ -224,9 +217,6 @@ export default function PriceSummary({
         <View style={styles.priceHeader}>
           <View style={styles.priceHeaderCopy}>
             <Text style={styles.priceEyebrow}>PRE-INSPECTION FEES</Text>
-            <Text style={styles.priceHeaderText}>
-              Visit charge and platform fee are visible now. Labour and parts are added only after technician inspection.
-            </Text>
           </View>
         </View>
 
@@ -240,9 +230,6 @@ export default function PriceSummary({
 
                 <View style={styles.priceRowCopy}>
                   <Text style={styles.priceRowLabel}>{item.label}</Text>
-                  {item.sublabel ? (
-                    <Text style={styles.priceRowSubLabel}>{item.sublabel}</Text>
-                  ) : null}
                 </View>
               </View>
 
@@ -268,7 +255,6 @@ export default function PriceSummary({
 
             <View style={styles.protectionCopy}>
               <Text style={styles.protectionTitle}>Repair protection</Text>
-              <Text style={styles.protectionText}>7-day post-service cover.</Text>
             </View>
           </View>
 
@@ -290,28 +276,6 @@ export default function PriceSummary({
             <Text style={styles.totalLabel}>Visible before inspection</Text>
           </View>
           <Text style={styles.totalValue}>{formatCurrency(visibleSubtotal)}</Text>
-        </View>
-      </View>
-
-      <View style={styles.noteCard}>
-        <View style={[styles.noteIconWrap, { backgroundColor: '#EFF6FF' }]}>
-          <Icon name="clipboard-text-outline" size={18} color="#2563EB" />
-        </View>
-        <View style={styles.noteCopy}>
-          <Text style={styles.noteTitle}>Calculated after inspection</Text>
-          <Text style={styles.noteText}>
-            Labour charge and replacement parts are finalized only after the technician inspects the issue and shares the final estimate for approval.
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.noteCard}>
-        <View style={[styles.noteIconWrap, { backgroundColor: BRAND_SOFT }]}>
-          <Icon name="shield-account-outline" size={18} color={BRAND_ORANGE} />
-        </View>
-        <View style={styles.noteCopy}>
-          <Text style={styles.noteTitle}>Safety protocols included</Text>
-          <Text style={styles.noteText}>OTP and live verification included.</Text>
         </View>
       </View>
 

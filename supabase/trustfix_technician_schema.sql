@@ -27,19 +27,6 @@ create table if not exists public.technician_profiles (
   )
 );
 
-create table if not exists public.technician_services (
-  id uuid primary key default gen_random_uuid(),
-  technician_id uuid not null references public.technician_profiles(id) on delete cascade,
-  service_id uuid not null references public.services(id) on delete cascade,
-  years_experience integer not null default 0,
-  is_primary boolean not null default false,
-  is_active boolean not null default true,
-  created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now()),
-  constraint technician_services_years_experience_chk check (years_experience >= 0),
-  constraint technician_services_unique unique (technician_id, service_id)
-);
-
 create table if not exists public.subscription_plans (
   code text primary key,
   name text not null,
@@ -148,18 +135,6 @@ alter table public.bookings
   references public.technician_profiles(id)
   on delete set null;
 
-alter table public.bookings
-  drop constraint if exists bookings_technician_service_id_fkey;
-
-alter table public.bookings
-  add constraint bookings_technician_service_id_fkey
-  foreign key (technician_service_id)
-  references public.technician_services(id)
-  on delete set null;
-
-create index if not exists technician_services_technician_id_idx
-  on public.technician_services(technician_id);
-
 create index if not exists technician_subscriptions_technician_id_idx
   on public.technician_subscriptions(technician_id, status);
 
@@ -243,10 +218,6 @@ begin
       next_round,
       'notified'
     from public.technician_profiles technician
-    inner join public.technician_services service_match
-      on service_match.technician_id = technician.id
-      and service_match.service_id = target_booking.service_id
-      and service_match.is_active = true
     where technician.status = 'active'
       and technician.is_available = true
     on conflict (booking_id, technician_id, assignment_round) do nothing
@@ -293,7 +264,6 @@ set search_path = ''
 as $$
 declare
   claimed_assignment_id uuid;
-  matched_technician_service_id uuid;
 begin
   perform 1
   from public.bookings
@@ -361,21 +331,9 @@ begin
     and technician_id <> p_technician_id
     and status = 'notified';
 
-  select ts.id
-  into matched_technician_service_id
-  from public.technician_services ts
-  inner join public.bookings b
-    on b.id = p_booking_id
-  where ts.technician_id = p_technician_id
-    and ts.service_id = b.service_id
-    and ts.is_active = true
-  order by ts.is_primary desc, ts.updated_at desc, ts.created_at desc
-  limit 1;
-
   update public.bookings
   set
     technician_id = p_technician_id,
-    technician_service_id = matched_technician_service_id,
     status = case
       when status in ('requested', 'confirmed', 'assigned') then 'accepted'
       else status
@@ -391,12 +349,6 @@ $$;
 drop trigger if exists technician_profiles_set_updated_at on public.technician_profiles;
 create trigger technician_profiles_set_updated_at
   before update on public.technician_profiles
-  for each row
-  execute procedure public.set_updated_at();
-
-drop trigger if exists technician_services_set_updated_at on public.technician_services;
-create trigger technician_services_set_updated_at
-  before update on public.technician_services
   for each row
   execute procedure public.set_updated_at();
 
@@ -425,21 +377,18 @@ create trigger booking_completion_reports_set_updated_at
   execute procedure public.set_updated_at();
 
 alter table public.technician_profiles enable row level security;
-alter table public.technician_services enable row level security;
 alter table public.subscription_plans enable row level security;
 alter table public.technician_subscriptions enable row level security;
 alter table public.booking_assignments enable row level security;
 alter table public.booking_completion_reports enable row level security;
 
 revoke all on table public.technician_profiles from anon, authenticated;
-revoke all on table public.technician_services from anon, authenticated;
 revoke all on table public.subscription_plans from anon, authenticated;
 revoke all on table public.technician_subscriptions from anon, authenticated;
 revoke all on table public.booking_assignments from anon, authenticated;
 revoke all on table public.booking_completion_reports from anon, authenticated;
 
 grant select, insert, update on table public.technician_profiles to authenticated;
-grant select, insert, update, delete on table public.technician_services to authenticated;
 grant select on table public.subscription_plans to authenticated;
 grant select, insert, update on table public.technician_subscriptions to authenticated;
 grant select, insert, update on table public.booking_assignments to authenticated;
@@ -468,14 +417,6 @@ for update
 to authenticated
 using ((select auth.uid()) is not null and (select auth.uid()) = id)
 with check ((select auth.uid()) is not null and (select auth.uid()) = id);
-
-drop policy if exists "technician_services_manage_own" on public.technician_services;
-create policy "technician_services_manage_own"
-on public.technician_services
-for all
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = technician_id)
-with check ((select auth.uid()) is not null and (select auth.uid()) = technician_id);
 
 drop policy if exists "subscription_plans_select_authenticated" on public.subscription_plans;
 create policy "subscription_plans_select_authenticated"

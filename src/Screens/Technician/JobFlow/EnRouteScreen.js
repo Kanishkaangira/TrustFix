@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Linking,
   SafeAreaView,
   StyleSheet,
@@ -10,16 +11,150 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../../Components/ScreenWrapper';
-import { getTechnicianJobFlow } from '../../../technician/jobFlowData';
+import { fetchTechnicianJobDetail } from '../../../technician/jobAssignmentEngine';
+import { markTechnicianArrived, markTechnicianEnRoute } from '../../../technician/jobProgressEngine';
 import { useTechScreenTheme } from '../../../technician/theme';
 
+const formatSchedule = (booking = {}) => {
+  const date = String(booking.scheduled_date || '').trim();
+  const slot = String(booking.scheduled_slot_label || '').trim();
+
+  if (date && slot) {
+    return `${date} • ${slot}`;
+  }
+
+  return date || slot || 'Schedule pending';
+};
+
+const formatProblem = (booking = {}) => (
+  String(
+    booking.problem_name_snapshot ||
+    booking.custom_problem ||
+    'Problem details not shared yet.',
+  ).trim()
+);
+
 export default function EnRouteScreen({ navigation, route }) {
+  const bookingId = route?.params?.jobId;
   const {
     colors: TECH_COLORS,
     statusBarStyle,
     styles,
   } = useTechScreenTheme(createStyles);
-  const job = getTechnicianJobFlow(route?.params?.jobId);
+  const [jobRecord, setJobRecord] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadJob = async () => {
+      setIsLoading(true);
+      setErrorMessage('');
+
+      const result = await fetchTechnicianJobDetail(bookingId);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (result.error) {
+        setJobRecord(null);
+        setErrorMessage(result.error.message || 'Could not load this booking right now.');
+      } else {
+        setJobRecord(result.data);
+      }
+
+      setIsLoading(false);
+    };
+
+    loadJob();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [bookingId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const ensureEnRoute = async () => {
+      if (!bookingId || !jobRecord?.bookings) {
+        return;
+      }
+
+      if (!['accepted', 'assigned'].includes(String(jobRecord.bookings.status || '').trim())) {
+        return;
+      }
+
+      setIsUpdatingStatus(true);
+      const result = await markTechnicianEnRoute(bookingId);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (result.error) {
+        setErrorMessage(result.error.message || 'Could not update route status right now.');
+      } else if (result.data?.status) {
+        setJobRecord((prev) => (
+          prev
+            ? {
+                ...prev,
+                bookings: {
+                  ...prev.bookings,
+                  status: result.data.status,
+                },
+              }
+            : prev
+        ));
+      }
+
+      setIsUpdatingStatus(false);
+    };
+
+    ensureEnRoute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [bookingId, jobRecord]);
+
+  useEffect(() => {
+    const currentStatus = String(jobRecord?.bookings?.status || '').trim();
+
+    if (currentStatus === 'arrived') {
+      navigation.replace('TechnicianSafetyOtp', {
+        jobId: bookingId,
+        estimateDraft: route?.params?.estimateDraft,
+      });
+      return;
+    }
+
+    if ([
+      'otp_verified',
+      'estimate_sent',
+      'estimate_revision_requested',
+      'estimate_approved',
+      'in_progress',
+      'work_completed',
+    ].includes(currentStatus)) {
+      navigation.replace('TechnicianJobInProgress', {
+        jobId: bookingId,
+        estimateDraft: route?.params?.estimateDraft,
+      });
+    }
+  }, [bookingId, jobRecord?.bookings?.status, navigation, route?.params?.estimateDraft]);
+
+  const booking = jobRecord?.bookings || {};
+  const customerName = String(booking.customer_name_snapshot || 'Customer').trim();
+  const customerPhone = String(booking.customer_phone_snapshot || '').trim();
+  const serviceName = String(booking.service_name_snapshot || 'Service request').trim();
+  const problemLabel = formatProblem(booking);
+  const addressLabel = booking.address_label_snapshot
+    ? `${booking.address_label_snapshot} • ${booking.address_snapshot || 'Address pending'}`
+    : booking.address_snapshot || 'Address pending';
 
   return (
     <ScreenWrapper
@@ -45,18 +180,18 @@ export default function EnRouteScreen({ navigation, route }) {
           <View style={styles.topFloatWrap}>
             <View style={styles.topFloat}>
               <View style={styles.topFloatIcon}>
-                <Icon name={job.serviceIcon} size={20} color={TECH_COLORS.white} />
+                <Icon name="hammer-wrench" size={20} color={TECH_COLORS.white} />
               </View>
 
               <View style={styles.topFloatCopy}>
-                <Text style={styles.topFloatTitle}>{job.service}</Text>
+                <Text style={styles.topFloatTitle}>{serviceName}</Text>
                 <Text style={styles.topFloatText}>
-                  {job.customer.name} · {job.location.area}
+                  {customerName} • {problemLabel}
                 </Text>
               </View>
 
               <View style={styles.liveBadge}>
-                <Text style={styles.liveBadgeText}>Live tracking</Text>
+                <Text style={styles.liveBadgeText}>Live</Text>
               </View>
             </View>
           </View>
@@ -69,56 +204,84 @@ export default function EnRouteScreen({ navigation, route }) {
           </View>
 
           <View style={styles.bottomSheet}>
-            <View style={styles.bottomTopRow}>
-              <View>
-                <Text style={styles.etaNumber}>{job.location.eta}</Text>
-                <Text style={styles.etaText}>Estimated arrival</Text>
+            {isLoading ? (
+              <View style={styles.stateCard}>
+                <ActivityIndicator color={TECH_COLORS.emerald} />
+                <Text style={styles.stateText}>Loading route details</Text>
               </View>
-              <View style={styles.distanceWrap}>
-                <Text style={styles.distanceNumber}>{job.location.distance}</Text>
-                <Text style={styles.etaText}>Distance remaining</Text>
+            ) : null}
+
+            {!isLoading && errorMessage ? (
+              <View style={styles.stateCard}>
+                <Icon name="alert-circle-outline" size={24} color={TECH_COLORS.rose} />
+                <Text style={styles.stateText}>{errorMessage}</Text>
               </View>
-            </View>
+            ) : null}
 
-            <View style={styles.customerCard}>
-              <View style={styles.customerCardCopy}>
-                <Text style={styles.customerCardTitle}>Customer can track your route</Text>
-                <Text style={styles.customerCardText}>
-                  Arrival status stays in sync for both customer and technician apps.
-                </Text>
-              </View>
-              <Icon name="map-marker-path" size={22} color={TECH_COLORS.emerald} />
-            </View>
+            {!isLoading && !errorMessage ? (
+              <>
+                <View style={styles.bottomTopRow}>
+                  <View>
+                    <Text style={styles.etaNumber}>{formatSchedule(booking)}</Text>
+                    <Text style={styles.etaText}>Scheduled arrival</Text>
+                  </View>
+                </View>
 
-            <View style={styles.locationCard}>
-              <Text style={styles.locationTitle}>{job.location.address}</Text>
-              <Text style={styles.locationText}>
-                {job.location.landmark} · Call if building access is blocked.
-              </Text>
-            </View>
+                <View style={styles.customerCard}>
+                  <View style={styles.customerCardCopy}>
+                    <Text style={styles.customerCardTitle}>{customerName}</Text>
+                    <Text style={styles.customerCardText}>
+                      {customerPhone || 'Customer phone not available'}
+                    </Text>
+                  </View>
+                  <Icon name="account-circle-outline" size={22} color={TECH_COLORS.emerald} />
+                </View>
 
-            <View style={styles.bottomActions}>
-              <TouchableOpacity
-                activeOpacity={0.86}
-                style={styles.callButton}
-                onPress={() => Linking.openURL(`tel:${job.customer.phoneUnlocked.replace(/\s+/g, '')}`)}
-              >
-                <Text style={styles.callText}>Call</Text>
-              </TouchableOpacity>
+                <View style={styles.locationCard}>
+                  <Text style={styles.locationTitle}>{addressLabel}</Text>
+                  <Text style={styles.locationText}>
+                    Booking {booking.booking_number || '-'}
+                  </Text>
+                </View>
 
-              <TouchableOpacity
-                activeOpacity={0.9}
-                style={styles.arrivedButton}
-                onPress={() =>
-                  navigation.navigate('TechnicianSafetyOtp', {
-                    jobId: job.id,
-                    estimateDraft: route?.params?.estimateDraft,
-                  })
-                }
-              >
-                <Text style={styles.arrivedText}>I've Arrived</Text>
-              </TouchableOpacity>
-            </View>
+                <View style={styles.bottomActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.86}
+                    style={styles.callButton}
+                    disabled={!customerPhone}
+                    onPress={() => Linking.openURL(`tel:${customerPhone.replace(/\s+/g, '')}`)}
+                  >
+                    <Text style={styles.callText}>Call</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={styles.arrivedButton}
+                    disabled={isUpdatingStatus}
+                    onPress={async () => {
+                      setIsUpdatingStatus(true);
+                      const result = await markTechnicianArrived(bookingId);
+                      setIsUpdatingStatus(false);
+
+                      if (result.error) {
+                        setErrorMessage(result.error.message || 'Could not mark arrival right now.');
+                        return;
+                      }
+
+                      navigation.replace('TechnicianSafetyOtp', {
+                        jobId: bookingId,
+                        estimateDraft: route?.params?.estimateDraft,
+                        otpExpiresAt: result.data?.expiresAt || null,
+                      });
+                    }}
+                  >
+                    <Text style={styles.arrivedText}>
+                      {isUpdatingStatus ? 'Updating...' : "I've Arrived"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
           </View>
         </View>
       </SafeAreaView>
@@ -316,7 +479,7 @@ const createStyles = ({
     marginBottom: 14,
   },
   etaNumber: {
-    fontSize: 34,
+    fontSize: 24,
     fontWeight: '800',
     color: TECH_COLORS.emerald,
   },
@@ -324,60 +487,50 @@ const createStyles = ({
     fontSize: 12,
     color: TECH_COLORS.textSecondary,
   },
-  distanceWrap: {
-    flex: 1,
-    alignItems: 'flex-end',
-    paddingTop: 6,
-  },
-  distanceNumber: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: TECH_COLORS.text,
-  },
   customerCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: TECH_RADIUS.md,
+    backgroundColor: TECH_COLORS.emeraldTint,
     borderWidth: 1,
     borderColor: 'rgba(16,217,160,0.20)',
-    backgroundColor: TECH_COLORS.emeraldTint,
-    padding: 14,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   customerCardCopy: {
     flex: 1,
-    paddingRight: 12,
+    marginRight: 10,
   },
   customerCardTitle: {
     fontSize: 13,
     fontWeight: '800',
-    color: TECH_COLORS.emerald,
+    color: TECH_COLORS.text,
   },
   customerCardText: {
     marginTop: 4,
-    fontSize: 11,
-    lineHeight: 16,
-    color: TECH_COLORS.textSecondary,
+    fontSize: 12,
+    color: TECH_COLORS.emerald,
   },
   locationCard: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: TECH_RADIUS.md,
+    backgroundColor: TECH_COLORS.card,
     borderWidth: 1,
     borderColor: TECH_COLORS.border,
-    backgroundColor: TECH_COLORS.float,
-    padding: 14,
     marginBottom: 14,
   },
   locationTitle: {
     fontSize: 13,
-    lineHeight: 19,
     fontWeight: '700',
     color: TECH_COLORS.text,
   },
   locationText: {
     marginTop: 4,
-    fontSize: 11,
-    lineHeight: 16,
-    color: TECH_COLORS.textMuted,
+    fontSize: 12,
+    color: TECH_COLORS.textSecondary,
   },
   bottomActions: {
     flexDirection: 'row',
@@ -399,7 +552,7 @@ const createStyles = ({
     color: TECH_COLORS.text,
   },
   arrivedButton: {
-    flex: 1.35,
+    flex: 1,
     minHeight: 46,
     borderRadius: TECH_RADIUS.md,
     backgroundColor: TECH_COLORS.emerald,
@@ -410,5 +563,15 @@ const createStyles = ({
     fontSize: 13,
     fontWeight: '800',
     color: TECH_COLORS.bg,
+  },
+  stateCard: {
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  stateText: {
+    fontSize: 13,
+    textAlign: 'center',
+    color: TECH_COLORS.textSecondary,
   },
 });

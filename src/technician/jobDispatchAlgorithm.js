@@ -10,12 +10,32 @@ const formatScheduledSlot = (booking = {}) => {
     return String(date);
   }
 
-  return slot || 'Schedule pending';
+  if (slot) {
+    return slot;
+  }
+
+  return 'Schedule pending';
 };
 
 const getActiveStatusMeta = (bookingStatus) => {
+  if (bookingStatus === 'estimate_revision_requested') {
+    return { label: 'Estimate Again', tone: 'coral' };
+  }
+
+  if (bookingStatus === 'estimate_sent') {
+    return { label: 'Waiting Approval', tone: 'amber' };
+  }
+
+  if (bookingStatus === 'estimate_approved') {
+    return { label: 'Approved', tone: 'emerald' };
+  }
+
   if (bookingStatus === 'in_progress') {
     return { label: 'In Progress', tone: 'emerald' };
+  }
+
+  if (bookingStatus === 'work_completed') {
+    return { label: 'Finish OTP', tone: 'amber' };
   }
 
   if (['en_route', 'arrived', 'otp_verified'].includes(bookingStatus)) {
@@ -70,6 +90,14 @@ export const mapAssignmentToJobCard = (assignment = {}) => {
   const bucket = getBucket(assignmentStatus, bookingStatus);
   const activeMeta = getActiveStatusMeta(bookingStatus);
   const initialFee = Number(booking.visit_charge || 0) + Number(booking.platform_fee || 0);
+  const serviceLabel = String(booking.service_name_snapshot || 'Service request').trim();
+  const problemLabel = String(
+    booking.problem_name_snapshot ||
+    booking.custom_problem ||
+    'Problem shared by customer',
+  ).trim();
+  const addressLabel = String(booking.address_snapshot || 'Address pending').trim();
+  const scheduleLabel = formatScheduledSlot(booking);
 
   return {
     id: assignment.id,
@@ -77,18 +105,18 @@ export const mapAssignmentToJobCard = (assignment = {}) => {
     bookingNumber: String(booking.booking_number || '').trim(),
     assignmentStatus,
     bucket,
-    title: String(booking.service_name_snapshot || 'Service request').trim(),
-    issue: String(
-      booking.problem_name_snapshot ||
-      booking.custom_problem ||
-      'Problem shared by customer',
-    ).trim(),
-    area: String(booking.address_snapshot || 'Address pending').trim(),
+    title: serviceLabel,
+    issue: problemLabel,
+    area: addressLabel,
     areaLabel: String(booking.address_label_snapshot || '').trim(),
-    slot: formatScheduledSlot(booking),
+    slot: scheduleLabel,
+    scheduleLabel,
+    serviceLabel,
+    problemLabel,
+    addressLabel,
     customerName: String(booking.customer_name_snapshot || 'Customer').trim(),
     customerPhone: String(booking.customer_phone_snapshot || '').trim(),
-    initialFeeLabel: initialFee > 0 ? `Initial fee ₹${initialFee}` : 'Initial fee pending',
+    initialFeeLabel: initialFee > 0 ? `Initial fee Rs ${initialFee}` : 'Initial fee pending',
     status: bucket === 'Upcoming'
       ? 'New'
       : bucket === 'Completed'

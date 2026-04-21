@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
           payment_status: 'paid',
           payment_completed_at: new Date().toISOString(),
           gateway_payment_id: razorpayPaymentId,
-          status: 'completed',
+          status: 'work_completed',
         };
 
     await adminClient
@@ -212,7 +212,22 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (updatedPaymentOrder.payment_stage === 'final_invoice' && updatedPaymentOrder.technician_id) {
+    if (updatedPaymentOrder.payment_stage === 'final_invoice') {
+      const { data: bookingRecord } = await adminClient
+        .from('bookings')
+        .select('id, technician_id')
+        .eq('id', bookingId)
+        .maybeSingle();
+
+      const resolvedTechnicianId = updatedPaymentOrder.technician_id ?? bookingRecord?.technician_id ?? null;
+
+      await adminClient
+        .from('booking_verification_otps')
+        .update({ status: 'expired' })
+        .eq('booking_id', bookingId)
+        .eq('purpose', 'completion_verification')
+        .eq('status', 'generated');
+
       const { data: completionReport } = await adminClient
         .from('booking_completion_reports')
         .select('*')
@@ -221,7 +236,7 @@ Deno.serve(async (req) => {
 
       if (completionReport) {
         await adminClient.from('technician_payout_requests').insert({
-          technician_id: updatedPaymentOrder.technician_id,
+          technician_id: resolvedTechnicianId,
           booking_id: bookingId,
           payment_order_id: updatedPaymentOrder.id,
           status: 'pending',

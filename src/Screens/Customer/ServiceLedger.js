@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
   Modal,
   Pressable,
 } from 'react-native';
@@ -15,13 +14,23 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
+import {
+  initializeFinalInvoicePayment,
+  openRazorpayCheckout,
+  verifyRazorpayPayment,
+} from '../../lib/payments/razorpay';
 import { supabase } from '../../lib/supabase';
 import {
   cancelBooking,
   getBookings,
+  respondToBookingEstimate,
   subscribeToBookings,
   syncBookingsFromRemote,
 } from '../../state/bookingStore';
+import {
+  fetchOwnProfileRecord,
+  getProfile,
+} from '../../state/profileStore';
 import { useAppTheme } from '../../theme/ThemeProvider';
 
 const ACTIVE_STATUSES = new Set([
@@ -29,8 +38,16 @@ const ACTIVE_STATUSES = new Set([
   'confirmed',
   'assigned',
   'en_route',
+  'arrived',
+  'otp_verified',
+  'estimate_sent',
+  'estimate_revision_requested',
+  'estimate_approved',
   'in_progress',
+  'work_completed',
 ]);
+
+const LEDGER_TABS = ['Active', 'Completed'];
 
 const HISTORY_COLUMNS = [
   'id',
@@ -43,6 +60,17 @@ const HISTORY_COLUMNS = [
   'scheduled_slot_label',
   'estimated_total',
   'status',
+  'created_at',
+].join(',');
+
+const ARRIVAL_OTP_COLUMNS = [
+  'id',
+  'booking_id',
+  'purpose',
+  'otp_code',
+  'status',
+  'expires_at',
+  'verified_at',
   'created_at',
 ].join(',');
 
@@ -71,11 +99,47 @@ const STATUS_META = {
     bg: 'rgba(249,115,22,0.12)',
     text: '#C2410C',
   },
+  arrived: {
+    label: 'Arrived',
+    dot: '#0EA5E9',
+    bg: 'rgba(14,165,233,0.12)',
+    text: '#0369A1',
+  },
+  otp_verified: {
+    label: 'OTP verified',
+    dot: '#10B981',
+    bg: 'rgba(16,185,129,0.12)',
+    text: '#047857',
+  },
+  estimate_sent: {
+    label: 'Estimate sent',
+    dot: '#F59E0B',
+    bg: 'rgba(245,158,11,0.12)',
+    text: '#B45309',
+  },
+  estimate_revision_requested: {
+    label: 'Estimate again',
+    dot: '#F97316',
+    bg: 'rgba(249,115,22,0.12)',
+    text: '#C2410C',
+  },
+  estimate_approved: {
+    label: 'Estimate approved',
+    dot: '#10B981',
+    bg: 'rgba(16,185,129,0.12)',
+    text: '#047857',
+  },
   in_progress: {
     label: 'In progress',
     dot: '#14B8A6',
     bg: 'rgba(20,184,166,0.12)',
     text: '#0F766E',
+  },
+  work_completed: {
+    label: 'Finish OTP',
+    dot: '#0EA5E9',
+    bg: 'rgba(14,165,233,0.12)',
+    text: '#0369A1',
   },
   completed: {
     label: 'Completed',
@@ -255,6 +319,73 @@ const normalizeHistoryRecords = (records = []) => (
     : []
 );
 
+const normalizeArrivalOtpRecord = (record = {}) => ({
+  id: String(record.id || '').trim(),
+  bookingId: String(record.booking_id || '').trim(),
+  purpose: String(record.purpose || '').trim(),
+  otpCode: String(record.otp_code || '').trim(),
+  status: String(record.status || '').trim(),
+  expiresAt: record.expires_at || null,
+  verifiedAt: record.verified_at || null,
+  createdAt: record.created_at || null,
+});
+
+const buildBookingOtpMap = (records = []) => (
+  Array.isArray(records)
+    ? records
+      .filter(Boolean)
+      .map(normalizeArrivalOtpRecord)
+      .filter((record) => record.id && record.bookingId)
+      .sort((a, b) => (safeDate(b.createdAt)?.getTime() || 0) - (safeDate(a.createdAt)?.getTime() || 0))
+      .reduce((accumulator, record) => {
+        if (!accumulator[record.bookingId]) {
+          accumulator[record.bookingId] = {};
+        }
+
+        if (!record.purpose || accumulator[record.bookingId][record.purpose]) {
+          return accumulator;
+        }
+
+        accumulator[record.bookingId][record.purpose] = record;
+
+        return accumulator;
+      }, {})
+    : {}
+);
+
+const formatOtpExpiry = (value) => {
+  const date = safeDate(value);
+
+  if (!date) {
+    return 'Share with technician';
+  }
+
+  return `Valid till ${date.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`;
+};
+
+const getOtpCountdown = (value, nowMs = Date.now()) => {
+  const date = safeDate(value);
+
+  if (!date) {
+    return '';
+  }
+
+  const remainingMs = date.getTime() - nowMs;
+
+  if (remainingMs <= 0) {
+    return 'Expired';
+  }
+
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `Expires in ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
 const getLatestHistoryRecords = (records = []) => {
   const seen = new Set();
 
@@ -282,6 +413,20 @@ const fetchBookingHistoryRecords = async () => {
   }
 };
 
+const fetchBookingOtpRecords = async () => {
+  try {
+    return await supabase.db.select('booking_verification_otps', {
+      columns: ARRIVAL_OTP_COLUMNS,
+      order: [{ column: 'created_at', ascending: false }],
+    });
+  } catch (_) {
+    return {
+      data: [],
+      error: { message: 'Could not load arrival verification right now.' },
+    };
+  }
+};
+
 const StatusChip = ({ meta, styles }) => (
   <View style={[styles.statusChip, { borderColor: meta.dot }]}>
     <View style={[styles.statusDot, { backgroundColor: meta.dot }]} />
@@ -289,11 +434,49 @@ const StatusChip = ({ meta, styles }) => (
   </View>
 );
 
-const HistoryCard = ({ record, isLast, styles, onCancelPress, isCancelling }) => {
+const HistoryCard = ({
+  record,
+  bookingDetails,
+  isLast,
+  nowMs,
+  styles,
+  onCancelPress,
+  isCancelling,
+  onApproveEstimate,
+  onReviseEstimate,
+  onPayFinalBill,
+  isEstimateSubmitting,
+  isFinalPaymentSubmitting,
+}) => {
   const statusMeta = getStatusMeta(record.status);
+  const liveBookingStatus = String(bookingDetails?.status || record.status || '').trim();
+  const livePaymentStatus = String(bookingDetails?.paymentStatus || '').trim();
   const canCancel = record.status === 'requested' || record.status === 'confirmed';
   const isArchived =
     record.status === 'completed' || record.status === 'cancelled';
+  const activeArrivalOtp = record.arrivalOtp?.status === 'generated' ? record.arrivalOtp : null;
+  const verifiedArrivalOtp = record.arrivalOtp?.status === 'verified' ? record.arrivalOtp : null;
+  const activeCompletionOtp = record.completionOtp?.status === 'generated' ? record.completionOtp : null;
+  const shouldShowEstimateActions = liveBookingStatus === 'estimate_sent' && bookingDetails;
+  const shouldShowEstimateRequested = liveBookingStatus === 'estimate_revision_requested' && bookingDetails;
+  const shouldShowEstimateApproved = ['estimate_approved', 'in_progress', 'payment_pending', 'payment_requested'].includes(liveBookingStatus) && bookingDetails;
+  const finalBillTotal = Number(
+    bookingDetails?.finalInvoiceTotal
+    || (
+      Number(bookingDetails?.visitCharge || 0)
+      + Number(bookingDetails?.platformFee || 0)
+      + Number(bookingDetails?.protectionFee || 0)
+      + Number(bookingDetails?.urgencySurcharge || 0)
+      + Number(bookingDetails?.finalLabourCharge || 0)
+      + Number(bookingDetails?.finalPartsCharge || 0)
+    ),
+  );
+  const shouldShowFinalPayment = !!bookingDetails
+    && shouldShowEstimateApproved
+    && livePaymentStatus !== 'paid';
+  const showUrgencySurcharge = Number(bookingDetails?.urgencySurcharge || 0) > 0;
+  const otpCountdown = getOtpCountdown(activeArrivalOtp?.expiresAt, nowMs);
+  const completionOtpCountdown = getOtpCountdown(activeCompletionOtp?.expiresAt, nowMs);
 
   return (
     <View style={styles.timelineRow}>
@@ -360,6 +543,182 @@ const HistoryCard = ({ record, isLast, styles, onCancelPress, isCancelling }) =>
             </View>
           ) : null}
         </View>
+
+        {activeArrivalOtp ? (
+          <View style={styles.otpPanel}>
+            <View style={styles.otpPanelHeader}>
+              <Text style={styles.otpPanelTitle}>Arrival OTP</Text>
+              <Text style={styles.otpPanelMeta}>{formatOtpExpiry(activeArrivalOtp.expiresAt)}</Text>
+            </View>
+            {otpCountdown ? (
+              <Text style={[
+                styles.otpPanelCountdown,
+                otpCountdown === 'Expired' && styles.otpPanelCountdownExpired,
+              ]}>
+                {otpCountdown}
+              </Text>
+            ) : null}
+            <Text style={styles.otpPanelCode}>{activeArrivalOtp.otpCode}</Text>
+            <Text style={styles.otpPanelHint}>Share this OTP with the technician after arrival.</Text>
+          </View>
+        ) : null}
+
+        {!activeArrivalOtp && verifiedArrivalOtp ? (
+          <View style={styles.otpVerifiedRow}>
+            <Icon name="shield-check" size={14} color="#047857" />
+            <Text style={styles.otpVerifiedText}>Arrival OTP verified</Text>
+          </View>
+        ) : null}
+
+        {activeCompletionOtp ? (
+          <View style={styles.otpPanel}>
+            <View style={styles.otpPanelHeader}>
+              <Text style={styles.otpPanelTitle}>Finish OTP</Text>
+              <Text style={styles.otpPanelMeta}>{formatOtpExpiry(activeCompletionOtp.expiresAt)}</Text>
+            </View>
+            {completionOtpCountdown ? (
+              <Text style={[
+                styles.otpPanelCountdown,
+                completionOtpCountdown === 'Expired' && styles.otpPanelCountdownExpired,
+              ]}>
+                {completionOtpCountdown}
+              </Text>
+            ) : null}
+            <Text style={styles.otpPanelCode}>{activeCompletionOtp.otpCode}</Text>
+            <Text style={styles.otpPanelHint}>Share this OTP with the technician to complete the job.</Text>
+          </View>
+        ) : null}
+
+        {shouldShowEstimateActions ? (
+          <View style={styles.estimatePanel}>
+            <View style={styles.estimatePanelHeader}>
+              <Text style={styles.estimatePanelTitle}>Repair Estimate</Text>
+              <Text style={styles.estimatePanelVersion}>
+                v{Number(bookingDetails.estimateVersionNo || 0) || 1}
+              </Text>
+            </View>
+            <View style={styles.estimateLine}>
+              <Text style={styles.estimateLineLabel}>Labour</Text>
+              <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.proposedLabourCharge)}</Text>
+            </View>
+            <View style={styles.estimateLine}>
+              <Text style={styles.estimateLineLabel}>Parts</Text>
+              <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.proposedPartsCharge)}</Text>
+            </View>
+            <View style={styles.estimateLine}>
+              <Text style={styles.estimateLineLabel}>Total after repair</Text>
+              <Text style={styles.estimateLineValueStrong}>{formatCurrency(bookingDetails.proposedInvoiceTotal)}</Text>
+            </View>
+            {bookingDetails.estimateNote ? (
+              <Text style={styles.estimateNote}>{bookingDetails.estimateNote}</Text>
+            ) : null}
+
+            <View style={styles.estimateActionRow}>
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={[
+                  styles.estimateSecondaryButton,
+                  isEstimateSubmitting && styles.estimateButtonDisabled,
+                ]}
+                onPress={() => onReviseEstimate(record.bookingId)}
+                disabled={isEstimateSubmitting}
+              >
+                <Text style={styles.estimateSecondaryButtonText}>
+                  {isEstimateSubmitting ? 'Updating...' : 'Estimate Again'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={[
+                  styles.estimatePrimaryButton,
+                  isEstimateSubmitting && styles.estimateButtonDisabled,
+                ]}
+                onPress={() => onApproveEstimate(record.bookingId)}
+                disabled={isEstimateSubmitting}
+              >
+                <Text style={styles.estimatePrimaryButtonText}>
+                  {isEstimateSubmitting ? 'Updating...' : 'Approve'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {shouldShowEstimateRequested ? (
+          <View style={styles.estimateWaitingPanel}>
+            <Icon name="refresh" size={15} color="#C2410C" />
+            <Text style={styles.estimateWaitingText}>
+              {bookingDetails.estimateResponseNote || 'You asked the technician to share the estimate again.'}
+            </Text>
+          </View>
+        ) : null}
+
+        {shouldShowEstimateApproved && !shouldShowFinalPayment ? (
+          <View style={styles.estimateApprovedPanel}>
+            <Icon name="check-decagram" size={15} color="#047857" />
+            <Text style={styles.estimateApprovedText}>
+              Approved labour {formatCurrency(bookingDetails.finalLabourCharge)} and parts {formatCurrency(bookingDetails.finalPartsCharge)} are now saved.
+            </Text>
+          </View>
+        ) : null}
+
+        {shouldShowFinalPayment ? (
+          <View style={styles.finalBillPanel}>
+            <View style={styles.finalBillHeader}>
+              <Text style={styles.finalBillTitle}>Final Bill</Text>
+              <Text style={styles.finalBillAmount}>{formatCurrency(finalBillTotal)}</Text>
+            </View>
+
+            <View style={styles.finalBillLine}>
+              <Text style={styles.finalBillLabel}>Visit charge</Text>
+              <Text style={styles.finalBillValue}>{formatCurrency(bookingDetails.visitCharge)}</Text>
+            </View>
+            <View style={styles.finalBillLine}>
+              <Text style={styles.finalBillLabel}>Platform fee</Text>
+              <Text style={styles.finalBillValue}>{formatCurrency(bookingDetails.platformFee)}</Text>
+            </View>
+            {Number(bookingDetails.protectionFee || 0) > 0 ? (
+              <View style={styles.finalBillLine}>
+                <Text style={styles.finalBillLabel}>Protection</Text>
+                <Text style={styles.finalBillValue}>{formatCurrency(bookingDetails.protectionFee)}</Text>
+              </View>
+            ) : null}
+            {showUrgencySurcharge ? (
+              <View style={styles.finalBillLine}>
+                <Text style={styles.finalBillLabel}>Urgency surcharge</Text>
+                <Text style={styles.finalBillValue}>{formatCurrency(bookingDetails.urgencySurcharge)}</Text>
+              </View>
+            ) : null}
+            <View style={styles.finalBillLine}>
+              <Text style={styles.finalBillLabel}>Labour</Text>
+              <Text style={styles.finalBillValue}>{formatCurrency(bookingDetails.finalLabourCharge)}</Text>
+            </View>
+            <View style={styles.finalBillLine}>
+              <Text style={styles.finalBillLabel}>Parts</Text>
+              <Text style={styles.finalBillValue}>{formatCurrency(bookingDetails.finalPartsCharge)}</Text>
+            </View>
+            <View style={styles.finalBillLine}>
+              <Text style={styles.finalBillLabel}>Total due</Text>
+              <Text style={styles.finalBillValue}>{formatCurrency(finalBillTotal)}</Text>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[
+                styles.finalBillPayButton,
+                isFinalPaymentSubmitting && styles.estimateButtonDisabled,
+              ]}
+              onPress={() => onPayFinalBill(record.bookingId)}
+              disabled={isFinalPaymentSubmitting}
+            >
+              <Icon name="credit-card-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.finalBillPayButtonText}>
+                {isFinalPaymentSubmitting ? 'Opening payment...' : 'Pay with Razorpay'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         </View>
 
         {canCancel ? (
@@ -415,12 +774,26 @@ const ServiceLedger = ({ navigation }) => {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [bookings, setBookings] = useState(() => getBookings());
   const [historyRecords, setHistoryRecords] = useState([]);
+  const [otpByBooking, setOtpByBooking] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [cancelingBookingId, setCancelingBookingId] = useState('');
+  const [estimateBookingId, setEstimateBookingId] = useState('');
+  const [payingBookingId, setPayingBookingId] = useState('');
   const [pendingCancelRecord, setPendingCancelRecord] = useState(null);
   const [syncError, setSyncError] = useState('');
+  const [activeTab, setActiveTab] = useState('Active');
+  const [feedbackModal, setFeedbackModal] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => subscribeToBookings(setBookings), []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const refreshLedger = useCallback(async (showLoader = false) => {
     if (showLoader) {
@@ -428,9 +801,10 @@ const ServiceLedger = ({ navigation }) => {
     }
 
     try {
-      const [bookingsResult, historyResult] = await Promise.all([
+      const [bookingsResult, historyResult, otpResult] = await Promise.all([
         syncBookingsFromRemote(),
         fetchBookingHistoryRecords(),
+        fetchBookingOtpRecords(),
       ]);
 
       if (historyResult?.error) {
@@ -452,6 +826,14 @@ const ServiceLedger = ({ navigation }) => {
       } else if (!historyResult?.error) {
         setSyncError('');
       }
+
+      if (otpResult?.error) {
+        setOtpByBooking({});
+      } else {
+        setOtpByBooking(
+          buildBookingOtpMap(Array.isArray(otpResult?.data) ? otpResult.data : []),
+        );
+      }
     } finally {
       if (showLoader) {
         setIsRefreshing(false);
@@ -459,20 +841,31 @@ const ServiceLedger = ({ navigation }) => {
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      refreshLedger(false);
-    }, [refreshLedger]),
-  );
-
   const sortedBookings = useMemo(() => sortByRecent(bookings), [bookings]);
   const activeBookings = useMemo(
     () => sortedBookings.filter((booking) => ACTIVE_STATUSES.has(booking.status)),
     [sortedBookings],
   );
+  const hasLiveOtpFlow = useMemo(
+    () => activeBookings.some((booking) => (
+      booking.status === 'arrived' || booking.status === 'work_completed'
+    )),
+    [activeBookings],
+  );
+  const bookingDetailsById = useMemo(
+    () => sortedBookings.reduce((accumulator, booking) => {
+      accumulator[booking.id] = booking;
+      return accumulator;
+    }, {}),
+    [sortedBookings],
+  );
   const latestHistoryRecords = useMemo(
-    () => getLatestHistoryRecords(historyRecords),
-    [historyRecords],
+    () => getLatestHistoryRecords(historyRecords).map((record) => ({
+      ...record,
+      arrivalOtp: otpByBooking[record.bookingId]?.arrival_verification || null,
+      completionOtp: otpByBooking[record.bookingId]?.completion_verification || null,
+    })),
+    [otpByBooking, historyRecords],
   );
   const activeHistoryRecords = useMemo(
     () => latestHistoryRecords.filter((record) => ACTIVE_STATUSES.has(record.status)),
@@ -484,7 +877,21 @@ const ServiceLedger = ({ navigation }) => {
     )),
     [latestHistoryRecords],
   );
-  const visibleHistoryRecords = latestHistoryRecords;
+  const visibleHistoryRecords = activeTab === 'Active'
+    ? activeHistoryRecords
+    : archivedHistoryRecords;
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshLedger(false);
+
+      const timer = setInterval(() => {
+        refreshLedger(false);
+      }, hasLiveOtpFlow ? 2000 : 8000);
+
+      return () => clearInterval(timer);
+    }, [hasLiveOtpFlow, refreshLedger]),
+  );
 
   const totalSpent = sortedBookings.reduce((sum, booking) => (
     booking.status === 'cancelled'
@@ -506,7 +913,7 @@ const ServiceLedger = ({ navigation }) => {
     {
       label: 'Jobs Done',
       value: String(
-        visibleHistoryRecords.filter((record) => record.status === 'completed')
+        archivedHistoryRecords.filter((record) => record.status === 'completed')
           .length,
       ),
       accent: '#8B5CF6',
@@ -520,6 +927,14 @@ const ServiceLedger = ({ navigation }) => {
 
     setPendingCancelRecord(null);
   }, [cancelingBookingId]);
+
+  const showFeedbackModal = useCallback((title, message, tone = 'brand', extras = {}) => {
+    setFeedbackModal({ title, message, tone, ...extras });
+  }, []);
+
+  const closeFeedbackModal = useCallback(() => {
+    setFeedbackModal(null);
+  }, []);
 
   const handleCancelBooking = useCallback((record) => {
     setPendingCancelRecord(record);
@@ -536,9 +951,10 @@ const ServiceLedger = ({ navigation }) => {
       const result = await cancelBooking(pendingCancelRecord.bookingId);
 
       if (result?.error) {
-        Alert.alert(
+        showFeedbackModal(
           'Unable to cancel',
           result.error.message || 'Please try again.',
+          'warning',
         );
         return;
       }
@@ -548,7 +964,140 @@ const ServiceLedger = ({ navigation }) => {
     } finally {
       setCancelingBookingId('');
     }
-  }, [pendingCancelRecord, refreshLedger]);
+  }, [pendingCancelRecord, refreshLedger, showFeedbackModal]);
+
+  const handleApproveEstimate = useCallback(async (bookingId) => {
+    setEstimateBookingId(bookingId);
+
+    try {
+      const result = await respondToBookingEstimate({
+        bookingId,
+        action: 'approve',
+      });
+
+      if (result?.error) {
+        showFeedbackModal('Could not approve estimate', result.error.message || 'Please try again.', 'warning');
+        return;
+      }
+
+      showFeedbackModal('Estimate approved', 'The final bill is now ready for payment.', 'success');
+
+      await refreshLedger(false);
+    } finally {
+      setEstimateBookingId('');
+    }
+  }, [refreshLedger, showFeedbackModal]);
+
+  const handleReviseEstimate = useCallback(async (bookingId) => {
+    setEstimateBookingId(bookingId);
+
+    try {
+      const result = await respondToBookingEstimate({
+        bookingId,
+        action: 'revise',
+      });
+
+      if (result?.error) {
+        showFeedbackModal('Could not request revision', result.error.message || 'Please try again.', 'warning');
+        return;
+      }
+
+      showFeedbackModal('Estimate updated', 'The technician has been asked to send the estimate again.', 'brand');
+
+      await refreshLedger(false);
+    } finally {
+      setEstimateBookingId('');
+    }
+  }, [refreshLedger, showFeedbackModal]);
+
+  const handlePayFinalBill = useCallback(async (bookingId) => {
+    setPayingBookingId(bookingId);
+
+    try {
+      const paymentInitResult = await initializeFinalInvoicePayment({ bookingId });
+
+      if (paymentInitResult?.error || !paymentInitResult?.data?.paymentOrder) {
+        showFeedbackModal(
+          'Payment unavailable',
+          paymentInitResult?.error?.message || 'Final bill payment could not be started right now.',
+          'warning',
+        );
+        return;
+      }
+
+      const storedProfile = getProfile();
+      const profileResult = await fetchOwnProfileRecord();
+      const customer = {
+        fullName: profileResult.data?.full_name || storedProfile.name || '',
+        email: profileResult.data?.email || storedProfile.email || '',
+        phone: profileResult.data?.phone || storedProfile.phone || '',
+      };
+
+      let checkoutResponse;
+
+      try {
+        checkoutResponse = await openRazorpayCheckout({
+          order: paymentInitResult.data.paymentOrder,
+          customer,
+          description: `TrustFix final bill payment`,
+        });
+      } catch (checkoutError) {
+        showFeedbackModal(
+          'Payment pending',
+          String(
+            checkoutError?.description ||
+            checkoutError?.error?.description ||
+            'The final bill payment was not completed.',
+          ).trim(),
+          'warning',
+        );
+        return;
+      }
+
+      const verificationResult = await verifyRazorpayPayment({
+        paymentOrderId: paymentInitResult.data.paymentOrder.id,
+        razorpayOrderId: checkoutResponse?.razorpay_order_id || paymentInitResult.data.paymentOrder.provider_order_id,
+        razorpayPaymentId: checkoutResponse?.razorpay_payment_id,
+        razorpaySignature: checkoutResponse?.razorpay_signature,
+      });
+
+      if (verificationResult?.error) {
+        showFeedbackModal(
+          'Verification pending',
+          verificationResult.error.message || 'The payment was received but could not be verified yet.',
+          'warning',
+        );
+        return;
+      }
+
+      await refreshLedger(false);
+      showFeedbackModal(
+        'Payment complete',
+        'The final bill was paid successfully. Ask the technician to open the finish OTP step, then share the code shown in your Home Ledger.',
+        'success',
+      );
+    } finally {
+      setPayingBookingId('');
+    }
+  }, [refreshLedger, showFeedbackModal]);
+
+  const feedbackToneMeta = {
+    brand: {
+      icon: 'information-outline',
+      iconColor: colors.primary,
+      iconBg: colors.primarySoft,
+    },
+    success: {
+      icon: 'check-decagram',
+      iconColor: '#047857',
+      iconBg: 'rgba(16,185,129,0.12)',
+    },
+    warning: {
+      icon: 'alert-outline',
+      iconColor: '#C2410C',
+      iconBg: 'rgba(249,115,22,0.12)',
+    },
+  }[feedbackModal?.tone || 'brand'];
 
   return (
     <ScreenWrapper
@@ -616,6 +1165,35 @@ const ServiceLedger = ({ navigation }) => {
               </Text>
             </View>
 
+            <View style={styles.tabsShell}>
+              <View style={styles.tabsRow}>
+                {LEDGER_TABS.map((tab) => {
+                  const isActive = tab === activeTab;
+                  const tabCount = tab === 'Active'
+                    ? activeHistoryRecords.length
+                    : archivedHistoryRecords.length;
+
+                  return (
+                    <TouchableOpacity
+                      key={tab}
+                      activeOpacity={0.88}
+                      style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                      onPress={() => setActiveTab(tab)}
+                    >
+                      <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                        {tab}
+                      </Text>
+                      <View style={[styles.tabCountPill, isActive && styles.tabCountPillActive]}>
+                        <Text style={[styles.tabCountText, isActive && styles.tabCountTextActive]}>
+                          {tabCount}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
             {syncError ? (
               <View style={styles.syncErrorCard}>
                 <Icon name="wifi-alert" size={16} color="#F97316" />
@@ -625,50 +1203,83 @@ const ServiceLedger = ({ navigation }) => {
 
             {visibleHistoryRecords.length ? (
               <View style={styles.timelineWrap}>
-                {activeHistoryRecords.length ? (
-                  <View style={styles.recordGroup}>
-                    <Text style={styles.groupHeading}>Requested & Active</Text>
-                    {activeHistoryRecords.map((record, index) => (
-                      <HistoryCard
-                        key={record.id}
-                        record={record}
-                        isLast={index === activeHistoryRecords.length - 1}
-                        styles={styles}
-                        onCancelPress={handleCancelBooking}
-                        isCancelling={cancelingBookingId === record.bookingId}
-                      />
-                    ))}
-                  </View>
-                ) : null}
-
-                {archivedHistoryRecords.length ? (
-                  <View style={styles.recordGroup}>
-                    <Text style={styles.groupHeading}>Completed & Cancelled</Text>
-                    {archivedHistoryRecords.map((record, index) => (
-                      <HistoryCard
-                        key={record.id}
-                        record={record}
-                        isLast={index === archivedHistoryRecords.length - 1}
-                        styles={styles}
-                        onCancelPress={handleCancelBooking}
-                        isCancelling={cancelingBookingId === record.bookingId}
-                      />
-                    ))}
-                  </View>
-                ) : null}
+                <View style={styles.recordGroup}>
+                  <Text style={styles.groupHeading}>
+                    {activeTab === 'Active' ? 'Requested & Active' : 'Completed & Cancelled'}
+                  </Text>
+                  {visibleHistoryRecords.map((record, index) => (
+                    <HistoryCard
+                      key={record.id}
+                      record={record}
+                      bookingDetails={bookingDetailsById[record.bookingId] || null}
+                      isLast={index === visibleHistoryRecords.length - 1}
+                      nowMs={nowMs}
+                      styles={styles}
+                      onCancelPress={handleCancelBooking}
+                      isCancelling={cancelingBookingId === record.bookingId}
+                      onApproveEstimate={handleApproveEstimate}
+                      onReviseEstimate={handleReviseEstimate}
+                      onPayFinalBill={handlePayFinalBill}
+                      isEstimateSubmitting={estimateBookingId === record.bookingId}
+                      isFinalPaymentSubmitting={payingBookingId === record.bookingId}
+                    />
+                  ))}
+                </View>
               </View>
             ) : (
               <View style={styles.historyEmpty}>
-                <Text style={styles.historyEmptyTitle}>No history records yet</Text>
+                <Text style={styles.historyEmptyTitle}>
+                  {activeTab === 'Active' ? 'No active services yet' : 'No completed services yet'}
+                </Text>
                 <Text style={styles.historyEmptySubtitle}>
-                  As soon as your booking status is created or updated, the service
-                  record will show here.
+                  {activeTab === 'Active'
+                    ? 'As soon as your booking starts moving, the live service record will show here.'
+                    : 'Completed or cancelled services will move here automatically.'}
                 </Text>
               </View>
             )}
           </>
         )}
       </ScrollView>
+
+      <Modal
+        transparent
+        visible={!!feedbackModal}
+        animationType="fade"
+        onRequestClose={closeFeedbackModal}
+      >
+        <View style={styles.confirmOverlay}>
+          <Pressable style={styles.confirmBackdrop} onPress={closeFeedbackModal} />
+          <View style={styles.feedbackDialog}>
+            <View style={[styles.feedbackIconWrap, { backgroundColor: feedbackToneMeta?.iconBg }]}>
+              <Icon
+                name={feedbackToneMeta?.icon || 'information-outline'}
+                size={24}
+                color={feedbackToneMeta?.iconColor || colors.primary}
+              />
+            </View>
+            <Text style={styles.feedbackTitle}>{feedbackModal?.title || 'Notice'}</Text>
+            <Text style={styles.feedbackText}>{feedbackModal?.message || ''}</Text>
+            {feedbackModal?.otpCode ? (
+              <View style={styles.feedbackOtpCard}>
+                <Text style={styles.feedbackOtpLabel}>Finish OTP</Text>
+                <Text style={styles.feedbackOtpCode}>{feedbackModal.otpCode}</Text>
+                <Text style={styles.feedbackOtpMeta}>
+                  {formatOtpExpiry(feedbackModal?.otpExpiresAt, 'Share this OTP with the technician.')}
+                </Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={styles.feedbackButton}
+              onPress={closeFeedbackModal}
+            >
+              <Text style={styles.feedbackButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         transparent
@@ -860,6 +1471,64 @@ const createStyles = (colors) => StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 18,
   },
+  tabsShell: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 6,
+    shadowColor: colors.statShadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: colors.isDark ? 0.18 : 0.05,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  tabButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  tabButtonActive: {
+    backgroundColor: colors.primarySoft,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textSecondary,
+  },
+  tabTextActive: {
+    color: colors.textPrimary,
+  },
+  tabCountPill: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  tabCountPillActive: {
+    backgroundColor: colors.primary,
+  },
+  tabCountText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.textTertiary,
+  },
+  tabCountTextActive: {
+    color: colors.white,
+  },
   timelineWrap: {
     paddingHorizontal: 16,
   },
@@ -1021,6 +1690,252 @@ const createStyles = (colors) => StyleSheet.create({
     fontWeight: '700',
     color: '#64748B',
   },
+  otpPanel: {
+    marginTop: 14,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  otpPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  otpPanelTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  otpPanelMeta: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  otpPanelCountdown: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  otpPanelCountdownExpired: {
+    color: '#DC2626',
+  },
+  otpPanelCode: {
+    marginTop: 10,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 8,
+    color: colors.primary,
+  },
+  otpPanelHint: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  otpVerifiedRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  otpVerifiedText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#047857',
+  },
+  estimatePanel: {
+    marginTop: 14,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  estimatePanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  estimatePanelTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  estimatePanelVersion: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  estimateLine: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  estimateLineLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  estimateLineValue: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    fontWeight: '800',
+  },
+  estimateLineValueStrong: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '800',
+  },
+  estimateNote: {
+    marginTop: 10,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  estimateActionRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  estimateSecondaryButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  estimateSecondaryButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  estimatePrimaryButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  estimatePrimaryButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  estimateButtonDisabled: {
+    opacity: 0.6,
+  },
+  estimateWaitingPanel: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(249,115,22,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(249,115,22,0.18)',
+  },
+  estimateWaitingText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#9A3412',
+    fontWeight: '700',
+  },
+  estimateApprovedPanel: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(16,185,129,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.18)',
+  },
+  estimateApprovedText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#047857',
+    fontWeight: '700',
+  },
+  finalBillPanel: {
+    marginTop: 14,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  finalBillHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 8,
+  },
+  finalBillTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  finalBillAmount: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  finalBillLine: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  finalBillLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  finalBillValue: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    fontWeight: '800',
+  },
+  finalBillPayButton: {
+    marginTop: 14,
+    minHeight: 42,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  finalBillPayButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.white,
+  },
   cancelInlineRow: {
     marginTop: 14,
     paddingTop: 12,
@@ -1128,6 +2043,92 @@ const createStyles = (colors) => StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
+  },
+  feedbackDialog: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 26,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 18,
+    alignItems: 'center',
+    shadowColor: colors.statShadow,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: colors.isDark ? 0.28 : 0.12,
+    shadowRadius: 24,
+    elevation: 14,
+  },
+  feedbackIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  feedbackTitle: {
+    fontSize: 21,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    letterSpacing: -0.4,
+  },
+  feedbackText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  feedbackOtpCard: {
+    width: '100%',
+    marginTop: 16,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  feedbackOtpLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: colors.textSecondary,
+  },
+  feedbackOtpCode: {
+    marginTop: 8,
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: 8,
+    color: colors.primary,
+  },
+  feedbackOtpMeta: {
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  feedbackButton: {
+    marginTop: 18,
+    minWidth: 132,
+    minHeight: 48,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  feedbackButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.white,
   },
   confirmDialog: {
     width: '100%',
