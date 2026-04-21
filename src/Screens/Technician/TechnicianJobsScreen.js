@@ -58,7 +58,7 @@ export default function TechnicianJobsScreen({ navigation }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [acceptingBookingId, setAcceptingBookingId] = useState('');
 
-  const loadAssignments = async (options = {}) => {
+  const loadAssignments = React.useCallback(async (options = {}) => {
     const useRefreshingState = options.refreshing === true;
 
     if (useRefreshingState) {
@@ -73,20 +73,39 @@ export default function TechnicianJobsScreen({ navigation }) {
       Alert.alert('Could not load jobs', result.error.message);
     } else if (result.data) {
       setJobsByTab(result.data);
+
+      if (
+        result.data.Upcoming.length > 0 &&
+        (activeTab === 'Active' && result.data.Active.length === 0)
+      ) {
+        setActiveTab('Upcoming');
+      }
     }
 
     setIsLoading(false);
     setIsRefreshing(false);
-  };
+  }, [activeTab]);
 
   useEffect(() => {
     loadAssignments();
-  }, []);
+  }, [loadAssignments]);
 
   useFocusEffect(
     React.useCallback(() => {
       loadAssignments({ refreshing: true });
-    }, []),
+    }, [loadAssignments]),
+  );
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const intervalId = setInterval(() => {
+        loadAssignments({ refreshing: true });
+      }, 6000);
+
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, [loadAssignments]),
   );
 
   const list = jobsByTab[activeTab] || [];

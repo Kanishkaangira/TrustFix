@@ -76,6 +76,10 @@ Deno.serve(async (req) => {
     return json({ error: 'Technician profile is not active yet.' }, 403);
   }
 
+  await adminClient.rpc('dispatch_open_bookings_to_technician', {
+    p_technician_id: user.id,
+  });
+
   const { data, error } = await adminClient.rpc('claim_booking_assignment', {
     p_booking_id: bookingId,
     p_technician_id: user.id,

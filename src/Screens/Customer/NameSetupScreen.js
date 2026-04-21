@@ -141,6 +141,8 @@ export default function NameSetupScreen({ navigation, route }) {
             display_name: trimmedName,
             phone: authUser.phone || resolvedPhone || null,
             email: authUser.email || null,
+            status: 'active',
+            is_available: false,
           },
           {
             onConflict: 'id',

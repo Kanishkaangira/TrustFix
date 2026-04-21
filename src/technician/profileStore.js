@@ -248,6 +248,7 @@ export const updateTechnicianProfile = async (updater) => {
       email: normalizedProfile.email || null,
       city: normalizedProfile.city || null,
       service_area_summary: normalizedProfile.serviceArea || null,
+      status: 'active',
       is_available: normalizedProfile.isAvailable,
     }, {
       onConflict: 'id',
@@ -265,10 +266,34 @@ export const updateTechnicianProfile = async (updater) => {
 };
 
 export const updateTechnicianAvailability = async (nextValue) => {
-  return updateTechnicianProfile((prev) => ({
+  const normalizedNextValue = Boolean(nextValue);
+  const result = await updateTechnicianProfile((prev) => ({
     ...prev,
-    isAvailable: Boolean(nextValue),
+    isAvailable: normalizedNextValue,
   }));
+
+  if (result.error || !normalizedNextValue) {
+    return result;
+  }
+
+  const { user, error: userError } = await getAuthenticatedUser();
+
+  if (userError || !user?.id) {
+    return result;
+  }
+
+  const dispatchResult = await supabase.db.rpc('dispatch_open_bookings_to_technician', {
+    p_technician_id: user.id,
+  });
+
+  if (dispatchResult.error) {
+    return {
+      data: result.data,
+      error: dispatchResult.error,
+    };
+  }
+
+  return result;
 };
 
 export const getTechnicianAddresses = () => technicianAddresses;

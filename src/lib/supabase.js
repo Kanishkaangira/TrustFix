@@ -390,6 +390,58 @@ const invokeFunction = async (
   }
 };
 
+const rpcRequest = async (
+  functionName,
+  {
+    body,
+    allowUnauthenticated = false,
+    headers = {},
+  } = {},
+) => {
+  const sessionResult = allowUnauthenticated
+    ? { data: { session: null }, error: null }
+    : await getValidSession();
+
+  if (sessionResult.error) {
+    return { data: null, error: sessionResult.error };
+  }
+
+  const accessToken = sessionResult.data.session?.access_token;
+
+  if (!allowUnauthenticated && !accessToken) {
+    return {
+      data: null,
+      error: { message: 'Not authenticated.', status: 401 },
+    };
+  }
+
+  try {
+    const response = await fetch(`${REST_BASE_URL}/rpc/${functionName}`, {
+      method: 'POST',
+      headers: createHeaders(accessToken, headers),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    const payload = await parseResponseBody(response);
+
+    if (!response.ok) {
+      return {
+        data: null,
+        error: {
+          message: parseErrorMessage(payload),
+          status: response.status,
+        },
+      };
+    }
+
+    return { data: payload, error: null };
+  } catch (_) {
+    return {
+      data: null,
+      error: { message: 'Please check your internet connection.' },
+    };
+  }
+};
+
 export const supabase = {
   auth: {
     async signInWithOtp({ phone, options = {} }) {
@@ -570,6 +622,13 @@ export const supabase = {
     async remove(table, options = {}) {
       return restRequest(table, {
         method: 'DELETE',
+        ...options,
+      });
+    },
+
+    async rpc(functionName, params, options = {}) {
+      return rpcRequest(functionName, {
+        body: params,
         ...options,
       });
     },

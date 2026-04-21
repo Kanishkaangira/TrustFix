@@ -105,50 +105,18 @@ const hydrateAssignmentBookings = async (assignments = []) => {
 };
 
 export const fetchTechnicianAssignments = async () => {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-
-  if (userError) {
-    return { data: null, error: userError };
-  }
-
-  const userId = userData?.user?.id;
-
-  if (!userId) {
-    return { data: { Active: [], Upcoming: [], Completed: [] }, error: null };
-  }
-
-  const result = await supabase.db.select('booking_assignments', {
-    columns: `
-      id,
-      booking_id,
-      technician_id,
-      status,
-      offered_at,
-      accepted_at,
-      responded_at,
-      created_at,
-      updated_at,
-      bookings (
-        ${ASSIGNMENT_BOOKING_SUMMARY_COLUMNS}
-      )
-    `,
-    filters: [
-      { column: 'technician_id', op: 'eq', value: userId },
-      { column: 'status', op: 'in', value: ['notified', 'accepted', 'completed'] },
-    ],
-    order: [{ column: 'offered_at', ascending: false }],
-  });
+  const result = await supabase.functions.invoke('fetch-technician-jobs');
 
   if (result.error) {
     return { data: null, error: result.error };
   }
 
-  const hydratedAssignments = await hydrateAssignmentBookings(
-    Array.isArray(result.data) ? result.data : [],
+  const combinedAssignments = await hydrateAssignmentBookings(
+    Array.isArray(result.data?.assignments) ? result.data.assignments : [],
   );
 
   return {
-    data: bucketAssignmentsByTab(hydratedAssignments),
+    data: bucketAssignmentsByTab(combinedAssignments),
     error: null,
   };
 };
