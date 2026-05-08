@@ -68,7 +68,7 @@ const getSortValue = (assignment = {}, bucket) => {
 
   if (bucket === 'Completed') {
     return new Date(
-      assignment.bookings?.work_completed_at ||
+      assignment.bookings?.updated_at ||
       assignment.responded_at ||
       assignment.updated_at ||
       0,

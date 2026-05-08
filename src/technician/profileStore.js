@@ -94,30 +94,48 @@ const getAuthenticatedUser = async () => {
   return { user: data?.user || null, error: null };
 };
 
+const formatSubscriptionStatusLabel = (value = '') => {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (!normalized) {
+    return '';
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
 const mapTechnicianProfileRecordToUi = ({
   technicianProfile: profileRecord = {},
   subscription = null,
   plan = null,
-}) => ({
-  name: String(profileRecord.display_name || '').trim() || INITIAL_TECHNICIAN_PROFILE.name,
-  phone: formatDisplayPhone(profileRecord.phone) || INITIAL_TECHNICIAN_PROFILE.phone,
-  email: String(profileRecord.email || '').trim(),
-  plan: plan?.name ? `${plan.name} Plan` : INITIAL_TECHNICIAN_PROFILE.plan,
-  planMeta: subscription?.current_period_end
-    ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-    })}`
-    : INITIAL_TECHNICIAN_PROFILE.planMeta,
-  city: String(profileRecord.city || '').trim() || INITIAL_TECHNICIAN_PROFILE.city,
-  pincode: INITIAL_TECHNICIAN_PROFILE.pincode,
-  serviceArea: String(profileRecord.service_area_summary || '').trim() || INITIAL_TECHNICIAN_PROFILE.serviceArea,
-  rating: String(profileRecord.rating ?? '').trim() || INITIAL_TECHNICIAN_PROFILE.rating,
-  jobsDone: String(profileRecord.completed_jobs_count ?? '').trim() || INITIAL_TECHNICIAN_PROFILE.jobsDone,
-  completionRate: INITIAL_TECHNICIAN_PROFILE.completionRate,
-  onPlatform: INITIAL_TECHNICIAN_PROFILE.onPlatform,
-  isAvailable: Boolean(profileRecord.is_available),
-});
+}) => {
+  const subscriptionStatus = String(
+    subscription?.status || profileRecord.subscription_status || '',
+  ).trim().toLowerCase();
+
+  return {
+    name: String(profileRecord.display_name || '').trim() || INITIAL_TECHNICIAN_PROFILE.name,
+    phone: formatDisplayPhone(profileRecord.phone) || INITIAL_TECHNICIAN_PROFILE.phone,
+    email: String(profileRecord.email || '').trim(),
+    plan: plan?.name ? `${plan.name} Plan` : INITIAL_TECHNICIAN_PROFILE.plan,
+    planMeta: subscription?.current_period_end
+      ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+      })}`
+      : plan?.name && subscriptionStatus && subscriptionStatus !== 'active'
+        ? `Status: ${formatSubscriptionStatusLabel(subscriptionStatus)}`
+        : INITIAL_TECHNICIAN_PROFILE.planMeta,
+    city: String(profileRecord.city || '').trim() || INITIAL_TECHNICIAN_PROFILE.city,
+    pincode: INITIAL_TECHNICIAN_PROFILE.pincode,
+    serviceArea: String(profileRecord.service_area_summary || '').trim() || INITIAL_TECHNICIAN_PROFILE.serviceArea,
+    rating: String(profileRecord.rating ?? '').trim() || INITIAL_TECHNICIAN_PROFILE.rating,
+    jobsDone: String(profileRecord.completed_jobs_count ?? '').trim() || INITIAL_TECHNICIAN_PROFILE.jobsDone,
+    completionRate: INITIAL_TECHNICIAN_PROFILE.completionRate,
+    onPlatform: INITIAL_TECHNICIAN_PROFILE.onPlatform,
+    isAvailable: Boolean(profileRecord.is_available),
+  };
+};
 
 const buildAddressLine = ({
   addressLine1,
@@ -419,7 +437,15 @@ export const syncTechnicianProfileFromRemote = async () => {
     }
 
     let plan = null;
-    const planCode = subscriptionResult.data?.plan_code;
+    const fallbackSubscription = profileResult.data?.subscription_plan_code
+      ? {
+          plan_code: profileResult.data.subscription_plan_code,
+          status: profileResult.data?.subscription_status || null,
+          current_period_end: null,
+        }
+      : null;
+    const resolvedSubscription = subscriptionResult.data || fallbackSubscription;
+    const planCode = resolvedSubscription?.plan_code;
 
     if (planCode) {
       const planResult = await supabase.db.select('subscription_plans', {
@@ -436,7 +462,7 @@ export const syncTechnicianProfileFromRemote = async () => {
 
     const nextProfile = normalizeProfile(mapTechnicianProfileRecordToUi({
       technicianProfile: profileResult.data || {},
-      subscription: subscriptionResult.data || null,
+      subscription: resolvedSubscription,
       plan,
     }));
 

@@ -6,6 +6,7 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const razorpayKeySecret = Deno.env.get('RAZORPAY_KEY_SECRET') ?? '';
+const OTP_TABLE = 'verification_otps';
 
 const buildAdminClient = () => createClient(supabaseUrl, supabaseServiceRoleKey);
 
@@ -46,6 +47,128 @@ const getAuthenticatedUser = async (authHeader: string, apikey: string) => {
   }
 
   return { user: payload || null, error: null };
+};
+
+const roundCurrency = (value: unknown) => (
+  Math.round(Number(value ?? 0) * 100) / 100
+);
+
+const normalizePlanCode = (value: unknown) => {
+  const planCode = String(value ?? '').trim();
+  return planCode || null;
+};
+
+const getCommissionScope = (value: unknown) => {
+  const scope = String(value ?? '').trim();
+  return scope === 'labour_only' ? 'labour_only' : 'labour_parts';
+};
+
+const getTechnicianCommissionConfig = async (
+  adminClient: ReturnType<typeof buildAdminClient>,
+  technicianId: string | null,
+) => {
+  const defaults = {
+    planCodeSnapshot: null,
+    commissionPercentSnapshot: 0,
+    commissionScopeSnapshot: 'labour_parts',
+    visitFeeCommissionableSnapshot: false,
+  };
+
+  if (!technicianId) {
+    return defaults;
+  }
+
+  const { data: technicianProfile, error: technicianProfileError } = await adminClient
+    .from('technician_profiles')
+    .select('subscription_plan_code')
+    .eq('id', technicianId)
+    .maybeSingle();
+
+  if (technicianProfileError) {
+    return defaults;
+  }
+
+  const planCode = normalizePlanCode(technicianProfile?.subscription_plan_code);
+
+  if (!planCode) {
+    return defaults;
+  }
+
+  const { data: subscriptionPlan, error: subscriptionPlanError } = await adminClient
+    .from('subscription_plans')
+    .select('code, commission_percent, commission_scope, visit_fee_commissionable')
+    .eq('code', planCode)
+    .maybeSingle();
+
+  if (subscriptionPlanError || !subscriptionPlan) {
+    return {
+      ...defaults,
+      planCodeSnapshot: planCode,
+    };
+  }
+
+  return {
+    planCodeSnapshot: normalizePlanCode(subscriptionPlan.code),
+    commissionPercentSnapshot: roundCurrency(subscriptionPlan.commission_percent ?? 0),
+    commissionScopeSnapshot: getCommissionScope(subscriptionPlan.commission_scope),
+    visitFeeCommissionableSnapshot: Boolean(subscriptionPlan.visit_fee_commissionable),
+  };
+};
+
+const buildPayoutBreakdown = ({
+  visitFeeAmount,
+  labourAmount,
+  partsAmount,
+  commissionPercentSnapshot,
+  commissionScopeSnapshot,
+  visitFeeCommissionableSnapshot,
+}: {
+  visitFeeAmount: number,
+  labourAmount: number,
+  partsAmount: number,
+  commissionPercentSnapshot: number,
+  commissionScopeSnapshot: string,
+  visitFeeCommissionableSnapshot: boolean,
+}) => {
+  const normalizedVisitFeeAmount = roundCurrency(visitFeeAmount);
+  const normalizedLabourAmount = roundCurrency(labourAmount);
+  const normalizedPartsAmount = roundCurrency(partsAmount);
+  const normalizedCommissionPercent = roundCurrency(commissionPercentSnapshot);
+  const normalizedCommissionScope = getCommissionScope(commissionScopeSnapshot);
+  const commissionableVisitFeeAmount = visitFeeCommissionableSnapshot
+    ? normalizedVisitFeeAmount
+    : 0;
+  const commissionableLabourAmount = normalizedLabourAmount;
+  const commissionablePartsAmount = normalizedCommissionScope === 'labour_only'
+    ? 0
+    : normalizedPartsAmount;
+  const commissionBaseAmount = roundCurrency(
+    commissionableVisitFeeAmount
+    + commissionableLabourAmount
+    + commissionablePartsAmount,
+  );
+  const commissionAmount = roundCurrency(
+    (commissionBaseAmount * normalizedCommissionPercent) / 100,
+  );
+  const grossAmount = roundCurrency(
+    normalizedVisitFeeAmount
+    + normalizedLabourAmount
+    + normalizedPartsAmount,
+  );
+  const netAmount = roundCurrency(Math.max(grossAmount - commissionAmount, 0));
+
+  return {
+    grossAmount,
+    visitFeeAmount: normalizedVisitFeeAmount,
+    labourAmount: normalizedLabourAmount,
+    partsAmount: normalizedPartsAmount,
+    commissionableVisitFeeAmount,
+    commissionableLabourAmount,
+    commissionablePartsAmount,
+    commissionBaseAmount,
+    commissionAmount,
+    netAmount,
+  };
 };
 
 Deno.serve(async (req) => {
@@ -112,44 +235,49 @@ Deno.serve(async (req) => {
   let createdBooking: Record<string, unknown> | null = null;
 
   if (paymentOrder.payment_stage === 'booking_fee' && !bookingId) {
-    const checkoutSessionId = String(paymentOrder.notes?.checkout_session_id ?? '').trim();
+    const financialRecordId = String(
+      paymentOrder.notes?.financial_record_id
+      ?? paymentOrder.notes?.checkout_session_id
+      ?? '',
+    ).trim();
 
-    if (!checkoutSessionId) {
-      return json({ error: 'Checkout session not found for this payment.' }, 400);
+    if (!financialRecordId) {
+      return json({ error: 'Booking financial record not found for this payment.' }, 400);
     }
 
-    const { data: checkoutSession, error: checkoutSessionError } = await adminClient
-      .from('booking_checkout_sessions')
+    const { data: checkoutRecord, error: checkoutRecordError } = await adminClient
+      .from('booking_financial_records')
       .select('*')
-      .eq('id', checkoutSessionId)
+      .eq('id', financialRecordId)
       .eq('user_id', user.id)
+      .eq('record_type', 'checkout')
       .maybeSingle();
 
-    if (checkoutSessionError) {
-      return json({ error: checkoutSessionError.message }, 400);
+    if (checkoutRecordError) {
+      return json({ error: checkoutRecordError.message }, 400);
     }
 
-    if (!checkoutSession) {
-      return json({ error: 'Checkout session not found.' }, 404);
+    if (!checkoutRecord) {
+      return json({ error: 'Booking financial record not found.' }, 404);
     }
 
     const { data: insertedBooking, error: bookingInsertError } = await adminClient
       .from('bookings')
       .insert({
-        user_id: checkoutSession.user_id,
-        address_id: checkoutSession.address_id,
-        service_id: checkoutSession.service_id,
-        service_problem_id: checkoutSession.service_problem_id,
-        custom_problem: checkoutSession.custom_problem,
-        severity: checkoutSession.severity,
+        user_id: checkoutRecord.user_id,
+        address_id: checkoutRecord.address_id,
+        service_id: checkoutRecord.service_id,
+        service_problem_id: checkoutRecord.service_problem_id,
+        custom_problem: checkoutRecord.custom_problem,
+        severity: checkoutRecord.severity,
         status: 'confirmed',
-        scheduled_date: checkoutSession.scheduled_date,
-        scheduled_slot_label: checkoutSession.scheduled_slot_label,
-        protection_selected: checkoutSession.protection_selected,
-        visit_charge: checkoutSession.visit_charge,
-        platform_fee: checkoutSession.platform_fee,
-        protection_fee: checkoutSession.protection_fee,
-        estimated_total: checkoutSession.initial_amount,
+        scheduled_date: checkoutRecord.scheduled_date,
+        scheduled_slot_label: checkoutRecord.scheduled_slot_label,
+        protection_selected: checkoutRecord.protection_selected,
+        visit_charge: checkoutRecord.visit_charge,
+        platform_fee: checkoutRecord.platform_fee_amount,
+        protection_fee: checkoutRecord.protection_fee_amount,
+        estimated_total: checkoutRecord.initial_amount,
       })
       .select('*')
       .single();
@@ -162,9 +290,13 @@ Deno.serve(async (req) => {
     bookingId = insertedBooking.id;
 
     await adminClient
-      .from('booking_checkout_sessions')
-      .update({ status: 'paid' })
-      .eq('id', checkoutSessionId);
+      .from('booking_financial_records')
+      .update({
+        status: 'paid',
+        booking_id: bookingId,
+      })
+      .eq('id', financialRecordId)
+      .eq('record_type', 'checkout');
   }
 
   const { data: updatedPaymentOrder, error: updateError } = await adminClient
@@ -221,33 +353,74 @@ Deno.serve(async (req) => {
 
       const resolvedTechnicianId = updatedPaymentOrder.technician_id ?? bookingRecord?.technician_id ?? null;
 
-      await adminClient
-        .from('booking_verification_otps')
+        await adminClient
+          .from(OTP_TABLE)
         .update({ status: 'expired' })
         .eq('booking_id', bookingId)
         .eq('purpose', 'completion_verification')
         .eq('status', 'generated');
 
-      const { data: completionReport } = await adminClient
-        .from('booking_completion_reports')
+      const { data: completionRecord } = await adminClient
+        .from('booking_financial_records')
         .select('*')
         .eq('booking_id', bookingId)
+        .eq('record_type', 'completion')
         .maybeSingle();
 
-      if (completionReport) {
+      await adminClient
+        .from('booking_financial_records')
+        .update({
+          status: 'paid',
+          payment_completed_at: new Date().toISOString(),
+        })
+        .eq('booking_id', bookingId)
+        .eq('record_type', 'completion');
+
+      if (resolvedTechnicianId) {
+        const payoutCommissionConfig = await getTechnicianCommissionConfig(
+          adminClient,
+          resolvedTechnicianId,
+        );
+        const payoutBreakdown = buildPayoutBreakdown({
+          visitFeeAmount: Number(
+            completionRecord?.final_visit_charge
+            ?? updatedPaymentOrder.visit_fee_amount
+            ?? 0,
+          ),
+          labourAmount: Number(
+            completionRecord?.final_labour_amount
+            ?? updatedPaymentOrder.labour_amount
+            ?? 0,
+          ),
+          partsAmount: Number(
+            completionRecord?.final_parts_amount
+            ?? updatedPaymentOrder.parts_amount
+            ?? 0,
+          ),
+          commissionPercentSnapshot: payoutCommissionConfig.commissionPercentSnapshot,
+          commissionScopeSnapshot: payoutCommissionConfig.commissionScopeSnapshot,
+          visitFeeCommissionableSnapshot: payoutCommissionConfig.visitFeeCommissionableSnapshot,
+        });
+
         await adminClient.from('technician_payout_requests').insert({
           technician_id: resolvedTechnicianId,
           booking_id: bookingId,
           payment_order_id: updatedPaymentOrder.id,
           status: 'pending',
-          gross_amount: completionReport.final_customer_total ?? updatedPaymentOrder.amount,
-          visit_fee_amount: completionReport.final_visit_charge ?? updatedPaymentOrder.visit_fee_amount ?? 0,
-          labour_amount: completionReport.final_labour_amount ?? updatedPaymentOrder.labour_amount ?? 0,
-          parts_amount: completionReport.final_parts_amount ?? updatedPaymentOrder.parts_amount ?? 0,
-          platform_fee_amount: completionReport.platform_fee_amount ?? updatedPaymentOrder.platform_fee_amount ?? 0,
-          commission_base_amount: completionReport.commissionable_total ?? updatedPaymentOrder.commission_base_amount ?? 0,
-          commission_amount: completionReport.commission_amount ?? 0,
-          net_amount: completionReport.technician_payout_amount ?? 0,
+          gross_amount: payoutBreakdown.grossAmount,
+          visit_fee_amount: payoutBreakdown.visitFeeAmount,
+          labour_amount: payoutBreakdown.labourAmount,
+          parts_amount: payoutBreakdown.partsAmount,
+          plan_code_snapshot: payoutCommissionConfig.planCodeSnapshot,
+          commission_percent_snapshot: payoutCommissionConfig.commissionPercentSnapshot,
+          commission_scope_snapshot: payoutCommissionConfig.commissionScopeSnapshot,
+          visit_fee_commissionable_snapshot: payoutCommissionConfig.visitFeeCommissionableSnapshot,
+          commissionable_visit_fee_amount: payoutBreakdown.commissionableVisitFeeAmount,
+          commissionable_labour_amount: payoutBreakdown.commissionableLabourAmount,
+          commissionable_parts_amount: payoutBreakdown.commissionablePartsAmount,
+          commission_base_amount: payoutBreakdown.commissionBaseAmount,
+          commission_amount: payoutBreakdown.commissionAmount,
+          net_amount: payoutBreakdown.netAmount,
           notes: 'Auto-created after final invoice payment capture.',
         });
       }
@@ -260,3 +433,4 @@ Deno.serve(async (req) => {
     verified: true,
   });
 });
+

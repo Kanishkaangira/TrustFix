@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://ehmzcpunbwgqqniydoxt.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_cwJuG02r9WaERI_R2B0FWQ_69i5RtXX';
@@ -11,6 +12,7 @@ const SESSION_STORAGE_KEY = '@trustfix/supabase/session';
 const SESSION_REFRESH_BUFFER_SECONDS = 60;
 
 const listeners = new Set();
+let realtimeClient = null;
 
 const createHeaders = (accessToken, extraHeaders = {}) => ({
   apikey: SUPABASE_PUBLISHABLE_KEY,
@@ -66,6 +68,16 @@ const notifyAuthListeners = (event, session) => {
   listeners.forEach((listener) => {
     listener(event, session);
   });
+};
+
+const syncRealtimeAuth = async (session) => {
+  if (!realtimeClient) {
+    return;
+  }
+
+  try {
+    await realtimeClient.realtime.setAuth(session?.access_token || null);
+  } catch (_) {}
 };
 
 const parseResponseBody = async (response) => {
@@ -186,6 +198,7 @@ let refreshPromise = null;
 const refreshSession = async (currentSession) => {
   if (!currentSession?.refresh_token) {
     await persistSession(null);
+    await syncRealtimeAuth(null);
     return { data: { session: null }, error: { message: 'Session expired.', status: 401 } };
   }
 
@@ -203,12 +216,14 @@ const refreshSession = async (currentSession) => {
     .then(async ({ data, error }) => {
       if (error) {
         await persistSession(null);
+        await syncRealtimeAuth(null);
         notifyAuthListeners('SIGNED_OUT', null);
         return { data: { session: null }, error };
       }
 
       const nextSession = normalizeSession(data);
       await persistSession(nextSession);
+      await syncRealtimeAuth(nextSession);
       notifyAuthListeners('TOKEN_REFRESHED', nextSession);
 
       return {
@@ -235,6 +250,24 @@ const getValidSession = async () => {
   }
 
   return refreshSession(session);
+};
+
+const getRealtimeClient = () => {
+  if (!realtimeClient) {
+    realtimeClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+      accessToken: async () => {
+        const sessionResult = await getValidSession();
+        return sessionResult.data?.session?.access_token || null;
+      },
+    });
+  }
+
+  return realtimeClient;
 };
 
 const restRequest = async (
@@ -489,6 +522,7 @@ export const supabase = {
 
       if (session) {
         await persistSession(session);
+        await syncRealtimeAuth(session);
         notifyAuthListeners('SIGNED_IN', session);
       }
 
@@ -527,6 +561,7 @@ export const supabase = {
         if (!response.ok) {
           if (response.status === 401 || response.status === 404) {
             await persistSession(null);
+            await syncRealtimeAuth(null);
             notifyAuthListeners('SIGNED_OUT', null);
           }
 
@@ -580,6 +615,7 @@ export const supabase = {
       }
 
       await persistSession(null);
+      await syncRealtimeAuth(null);
       notifyAuthListeners('SIGNED_OUT', null);
 
       return { error: null };
@@ -637,6 +673,18 @@ export const supabase = {
     async invoke(functionName, options = {}) {
       return invokeFunction(functionName, options);
     },
+  },
+  channel(name, options) {
+    return getRealtimeClient().channel(name, options);
+  },
+  getChannels() {
+    return getRealtimeClient().getChannels();
+  },
+  removeChannel(channel) {
+    return getRealtimeClient().removeChannel(channel);
+  },
+  removeAllChannels() {
+    return getRealtimeClient().removeAllChannels();
   },
 };
 

@@ -5,6 +5,7 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const OTP_TABLE = 'verification_otps';
 
 const buildAdminClient = () => createClient(supabaseUrl, supabaseServiceRoleKey);
 
@@ -179,7 +180,7 @@ Deno.serve(async (req) => {
   const nowIso = new Date().toISOString();
 
   const { data: existingOtp, error: existingOtpError } = await adminClient
-    .from('booking_verification_otps')
+    .from(OTP_TABLE)
     .select('id, otp_code, status, expires_at')
     .eq('booking_id', bookingId)
     .eq('purpose', purposeConfig.purpose)
@@ -214,7 +215,7 @@ Deno.serve(async (req) => {
   }
 
   await adminClient
-    .from('booking_verification_otps')
+    .from(OTP_TABLE)
     .update({
       status: existingOtp ? 'expired' : 'cancelled',
       updated_at: nowIso,
@@ -227,7 +228,7 @@ Deno.serve(async (req) => {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
   const { error: insertError } = await adminClient
-    .from('booking_verification_otps')
+    .from(OTP_TABLE)
     .insert({
       booking_id: bookingId,
       purpose: purposeConfig.purpose,
@@ -265,3 +266,4 @@ Deno.serve(async (req) => {
       : purposeConfig.successMessage,
   });
 });
+

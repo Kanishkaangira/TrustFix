@@ -70,7 +70,7 @@ const persistAddresses = async (nextAddresses) => {
 const applyAddresses = (nextAddresses) => {
   addresses = normalizeAddresses(nextAddresses);
   notify();
-  void persistAddresses(addresses);
+  persistAddresses(addresses);
   return addresses;
 };
 
@@ -338,4 +338,4 @@ export const resetAddressStore = async () => {
   return addresses;
 };
 
-void hydrateAddresses();
+hydrateAddresses();

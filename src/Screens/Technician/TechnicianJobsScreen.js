@@ -25,6 +25,11 @@ import {
 } from '../../technician/components/TechUi';
 
 const JOB_TABS = ['Active', 'Upcoming', 'Completed'];
+const TAB_LABELS = {
+  Active: 'Active Job',
+  Upcoming: 'New Job',
+  Completed: 'Completed',
+};
 
 const getPrimaryAction = (activeTab, job) => {
   if (activeTab === 'Upcoming') {
@@ -39,10 +44,25 @@ const getPrimaryAction = (activeTab, job) => {
     return { label: 'Pending Payment', route: 'TechnicianJobCompletion' };
   }
 
+  const bookingStatus = String(job?.raw?.bookings?.status || '').trim();
+
+  if ([
+    'otp_verified',
+    'estimate_sent',
+    'estimate_revision_requested',
+    'estimate_approved',
+    'in_progress',
+    'work_completed',
+    'payment_pending',
+    'payment_requested',
+  ].includes(bookingStatus)) {
+    return { label: 'Job Progress', route: 'TechnicianJobInProgress' };
+  }
+
   return { label: 'View Job', route: 'TechnicianJobDetail' };
 };
 
-export default function TechnicianJobsScreen({ navigation }) {
+export default function TechnicianJobsScreen({ navigation, route }) {
   const {
     colors: TECH_COLORS,
     statusBarStyle,
@@ -58,8 +78,18 @@ export default function TechnicianJobsScreen({ navigation }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [acceptingBookingId, setAcceptingBookingId] = useState('');
 
+  useEffect(() => {
+    const requestedTab = route?.params?.initialTab;
+
+    if (requestedTab && JOB_TABS.includes(requestedTab)) {
+      setActiveTab(requestedTab);
+      navigation.setParams?.({ initialTab: undefined });
+    }
+  }, [navigation, route?.params?.initialTab]);
+
   const loadAssignments = React.useCallback(async (options = {}) => {
     const useRefreshingState = options.refreshing === true;
+    const shouldShowAlert = options.silentAlert !== true;
 
     if (useRefreshingState) {
       setIsRefreshing(true);
@@ -70,7 +100,9 @@ export default function TechnicianJobsScreen({ navigation }) {
     const result = await fetchTechnicianAssignments();
 
     if (result.error) {
-      Alert.alert('Could not load jobs', result.error.message);
+      if (shouldShowAlert) {
+        Alert.alert('Could not load jobs', result.error.message);
+      }
     } else if (result.data) {
       setJobsByTab(result.data);
 
@@ -92,14 +124,14 @@ export default function TechnicianJobsScreen({ navigation }) {
 
   useFocusEffect(
     React.useCallback(() => {
-      loadAssignments({ refreshing: true });
+      loadAssignments({ refreshing: true, silentAlert: true });
     }, [loadAssignments]),
   );
 
   useFocusEffect(
     React.useCallback(() => {
       const intervalId = setInterval(() => {
-        loadAssignments({ refreshing: true });
+        loadAssignments({ refreshing: true, silentAlert: true });
       }, 6000);
 
       return () => {
@@ -158,7 +190,7 @@ export default function TechnicianJobsScreen({ navigation }) {
                     onPress={() => setActiveTab(tab)}
                   >
                     <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                      {tab}
+                      {TAB_LABELS[tab] || tab}
                     </Text>
                     <View style={[styles.tabCountPill, isActive && styles.tabCountPillActive]}>
                       <Text style={[styles.tabCountText, isActive && styles.tabCountTextActive]}>
@@ -174,9 +206,9 @@ export default function TechnicianJobsScreen({ navigation }) {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
               {activeTab === 'Active'
-                ? 'Accepted Services'
+                ? 'Active Job'
                 : activeTab === 'Upcoming'
-                  ? 'New Requests'
+                  ? 'New Job'
                   : 'Completed Services'}
             </Text>
             <Text style={styles.sectionAction}>
@@ -200,7 +232,7 @@ export default function TechnicianJobsScreen({ navigation }) {
                 color={TECH_COLORS.textMuted}
               />
               <Text style={styles.emptyTitle}>
-                {activeTab === 'Upcoming' ? 'No new requests yet' : 'No jobs here right now'}
+                {activeTab === 'Upcoming' ? 'No new jobs yet' : 'No jobs here right now'}
               </Text>
               <Text style={styles.emptyText}>
                 {activeTab === 'Upcoming'
@@ -335,7 +367,11 @@ export default function TechnicianJobsScreen({ navigation }) {
                         styles.singleActionButton,
                         highlighted && styles.actionButtonPrimaryHighlighted,
                       ]}
-                      onPress={() => navigation.navigate(primaryAction.route, { jobId: job.bookingId })}
+                      onPress={() => navigation.navigate(primaryAction.route, {
+                        jobId: job.bookingId,
+                        bookingNumber: job.bookingNumber,
+                        bookingSnapshot: job.raw?.bookings || null,
+                      })}
                     >
                       <Text style={styles.actionPrimaryText}>{primaryAction.label}</Text>
                       <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />

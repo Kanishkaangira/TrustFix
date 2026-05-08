@@ -44,10 +44,32 @@ const ACTIVE_STATUSES = new Set([
   'estimate_revision_requested',
   'estimate_approved',
   'in_progress',
+  'payment_requested',
+  'payment_pending',
+  'work_completed',
+]);
+
+const FAST_REFRESH_STATUSES = new Set([
+  'estimate_sent',
+  'estimate_revision_requested',
+  'estimate_approved',
+  'payment_requested',
+  'payment_pending',
+  'work_completed',
+]);
+
+const LIVE_ESTIMATE_AMOUNT_STATUSES = new Set([
+  'estimate_sent',
+  'estimate_revision_requested',
+  'estimate_approved',
+  'payment_requested',
+  'payment_pending',
+  'in_progress',
   'work_completed',
 ]);
 
 const LEDGER_TABS = ['Active', 'Completed'];
+const OTP_TABLE = 'verification_otps';
 
 const HISTORY_COLUMNS = [
   'id',
@@ -128,6 +150,18 @@ const STATUS_META = {
     dot: '#10B981',
     bg: 'rgba(16,185,129,0.12)',
     text: '#047857',
+  },
+  payment_requested: {
+    label: 'Pay final bill',
+    dot: '#0EA5E9',
+    bg: 'rgba(14,165,233,0.12)',
+    text: '#0369A1',
+  },
+  payment_pending: {
+    label: 'Payment pending',
+    dot: '#F59E0B',
+    bg: 'rgba(245,158,11,0.12)',
+    text: '#B45309',
   },
   in_progress: {
     label: 'In progress',
@@ -413,12 +447,12 @@ const fetchBookingHistoryRecords = async () => {
   }
 };
 
-const fetchBookingOtpRecords = async () => {
-  try {
-    return await supabase.db.select('booking_verification_otps', {
-      columns: ARRIVAL_OTP_COLUMNS,
-      order: [{ column: 'created_at', ascending: false }],
-    });
+  const fetchBookingOtpRecords = async () => {
+    try {
+      return await supabase.db.select(OTP_TABLE, {
+        columns: ARRIVAL_OTP_COLUMNS,
+        order: [{ column: 'created_at', ascending: false }],
+      });
   } catch (_) {
     return {
       data: [],
@@ -460,6 +494,9 @@ const HistoryCard = ({
   const shouldShowEstimateActions = liveBookingStatus === 'estimate_sent' && bookingDetails;
   const shouldShowEstimateRequested = liveBookingStatus === 'estimate_revision_requested' && bookingDetails;
   const shouldShowEstimateApproved = ['estimate_approved', 'in_progress', 'payment_pending', 'payment_requested'].includes(liveBookingStatus) && bookingDetails;
+  const showEstimateProtectionFee = Number(bookingDetails?.protectionFee || 0) > 0;
+  const showEstimateUrgencySurcharge = Number(bookingDetails?.urgencySurcharge || 0) > 0;
+  const estimateGrandTotal = Number(bookingDetails?.proposedInvoiceTotal || 0);
   const finalBillTotal = Number(
     bookingDetails?.finalInvoiceTotal
     || (
@@ -471,6 +508,11 @@ const HistoryCard = ({
       + Number(bookingDetails?.finalPartsCharge || 0)
     ),
   );
+  const visibleAmountLabel = bookingDetails
+    && LIVE_ESTIMATE_AMOUNT_STATUSES.has(liveBookingStatus)
+    && finalBillTotal > 0
+    ? formatCurrency(finalBillTotal)
+    : record.estimatedTotalLabel;
   const shouldShowFinalPayment = !!bookingDetails
     && shouldShowEstimateApproved
     && livePaymentStatus !== 'paid';
@@ -516,7 +558,7 @@ const HistoryCard = ({
               {record.problemName}
             </Text>
           </View>
-          <Text style={styles.historyAmount}>{record.estimatedTotalLabel}</Text>
+          <Text style={styles.historyAmount}>{visibleAmountLabel}</Text>
         </View>
 
         <View style={styles.historyMetaRow}>
@@ -597,17 +639,40 @@ const HistoryCard = ({
                 v{Number(bookingDetails.estimateVersionNo || 0) || 1}
               </Text>
             </View>
+            <Text style={styles.estimateHint}>
+              Review the full repair amount below before you approve it.
+            </Text>
             <View style={styles.estimateLine}>
-              <Text style={styles.estimateLineLabel}>Labour</Text>
+              <Text style={styles.estimateLineLabel}>Visit charge</Text>
+              <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.visitCharge)}</Text>
+            </View>
+            <View style={styles.estimateLine}>
+              <Text style={styles.estimateLineLabel}>Platform fee</Text>
+              <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.platformFee)}</Text>
+            </View>
+            {showEstimateProtectionFee ? (
+              <View style={styles.estimateLine}>
+                <Text style={styles.estimateLineLabel}>Protection</Text>
+                <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.protectionFee)}</Text>
+              </View>
+            ) : null}
+            {showEstimateUrgencySurcharge ? (
+              <View style={styles.estimateLine}>
+                <Text style={styles.estimateLineLabel}>Urgency surcharge</Text>
+                <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.urgencySurcharge)}</Text>
+              </View>
+            ) : null}
+            <View style={styles.estimateLine}>
+              <Text style={styles.estimateLineLabel}>Technician labour</Text>
               <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.proposedLabourCharge)}</Text>
             </View>
             <View style={styles.estimateLine}>
-              <Text style={styles.estimateLineLabel}>Parts</Text>
+              <Text style={styles.estimateLineLabel}>Parts and materials</Text>
               <Text style={styles.estimateLineValue}>{formatCurrency(bookingDetails.proposedPartsCharge)}</Text>
             </View>
             <View style={styles.estimateLine}>
-              <Text style={styles.estimateLineLabel}>Total after repair</Text>
-              <Text style={styles.estimateLineValueStrong}>{formatCurrency(bookingDetails.proposedInvoiceTotal)}</Text>
+              <Text style={styles.estimateLineLabel}>Estimated total payable</Text>
+              <Text style={styles.estimateLineValueStrong}>{formatCurrency(estimateGrandTotal)}</Text>
             </View>
             {bookingDetails.estimateNote ? (
               <Text style={styles.estimateNote}>{bookingDetails.estimateNote}</Text>
@@ -852,6 +917,10 @@ const ServiceLedger = ({ navigation }) => {
     )),
     [activeBookings],
   );
+  const hasFastMovingBooking = useMemo(
+    () => activeBookings.some((booking) => FAST_REFRESH_STATUSES.has(booking.status)),
+    [activeBookings],
+  );
   const bookingDetailsById = useMemo(
     () => sortedBookings.reduce((accumulator, booking) => {
       accumulator[booking.id] = booking;
@@ -887,10 +956,10 @@ const ServiceLedger = ({ navigation }) => {
 
       const timer = setInterval(() => {
         refreshLedger(false);
-      }, hasLiveOtpFlow ? 2000 : 8000);
+      }, hasLiveOtpFlow ? 2000 : hasFastMovingBooking ? 3000 : 8000);
 
       return () => clearInterval(timer);
-    }, [hasLiveOtpFlow, refreshLedger]),
+    }, [hasFastMovingBooking, hasLiveOtpFlow, refreshLedger]),
   );
 
   const totalSpent = sortedBookings.reduce((sum, booking) => (
@@ -1775,6 +1844,12 @@ const createStyles = (colors) => StyleSheet.create({
     fontWeight: '700',
     color: colors.textSecondary,
   },
+  estimateHint: {
+    marginTop: 8,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textSecondary,
+  },
   estimateLine: {
     marginTop: 10,
     flexDirection: 'row',
@@ -2212,3 +2287,4 @@ const createStyles = (colors) => StyleSheet.create({
     color: '#FFFFFF',
   },
 });
+

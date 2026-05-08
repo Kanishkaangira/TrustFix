@@ -14,7 +14,6 @@ const PAYOUT_COLUMNS = `
     booking_number,
     status,
     payment_status,
-    final_invoice_total,
     service_name_snapshot,
     problem_name_snapshot
   )
@@ -25,11 +24,9 @@ const BOOKING_COLUMNS = `
   booking_number,
   status,
   payment_status,
-  final_invoice_total,
   service_name_snapshot,
   problem_name_snapshot,
-  updated_at,
-  work_completed_at
+  updated_at
 `;
 
 const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
@@ -85,7 +82,7 @@ const normalizePayoutRecord = (record = {}) => {
   const settledAmount = Number(record.net_amount || 0);
   const displayAmount = settledAmount > 0
     ? settledAmount
-    : Number(record.gross_amount || booking?.final_invoice_total || 0);
+    : Number(record.gross_amount || 0);
 
   return {
     id: String(record.id || '').trim(),
@@ -114,7 +111,7 @@ const normalizeBookingRecord = (record = {}) => {
     paymentStatus: String(record.payment_status || '').trim(),
     serviceName,
     problemName,
-    eventAt: record.updated_at || record.work_completed_at || null,
+    eventAt: record.updated_at || null,
     icon: iconConfig.icon,
     iconBg: iconConfig.iconBg,
   };

@@ -9,17 +9,61 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
-import { getTechnicianJobFlow } from '../../technician/jobFlowData';
 import { useTechScreenTheme } from '../../technician/theme';
 import { TechCard } from '../../technician/components/TechUi';
 
-export default function TechnicianJobAlertScreen({ navigation }) {
+const formatCurrency = (value) => `Rs ${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
+
+const resolveAlertPayload = (routeParams = {}) => {
+  const assignment = routeParams.assignment || null;
+  const booking = assignment?.bookings || routeParams.booking || routeParams.job || null;
+  const bookingId = String(
+    routeParams.jobId ||
+    routeParams.bookingId ||
+    assignment?.booking_id ||
+    booking?.id ||
+    '',
+  ).trim();
+
+  return {
+    bookingId,
+    countdown: String(routeParams.countdown || 'LIVE').trim() || 'LIVE',
+    title: String(booking?.service_name_snapshot || routeParams.title || 'New nearby job').trim(),
+    issue: String(
+      booking?.problem_name_snapshot ||
+      booking?.custom_problem ||
+      routeParams.issue ||
+      'Customer shared a new service request.'
+    ).trim(),
+    bookingType: String(booking?.severity || routeParams.bookingType || 'priority').trim(),
+    area: String(booking?.address_label_snapshot || routeParams.area || 'Nearby service area').trim(),
+    address: String(booking?.address_snapshot || routeParams.address || 'Address will appear after you open the job.').trim(),
+    visitCharge: Number(booking?.visit_charge || routeParams.visitCharge || 0),
+    timeSlot: String(
+      booking?.scheduled_slot_label ||
+      routeParams.timeSlot ||
+      routeParams.scheduledSlot ||
+      'Schedule pending'
+    ).trim(),
+    bookingNumber: String(booking?.booking_number || routeParams.bookingNumber || '').trim(),
+  };
+};
+
+export default function TechnicianJobAlertScreen({ navigation, route }) {
   const {
     colors: TECH_COLORS,
     statusBarStyle,
     styles,
   } = useTechScreenTheme(createStyles);
-  const job = getTechnicianJobFlow('job-plumbing');
+  const alert = resolveAlertPayload(route?.params);
+  const hasLiveJob = Boolean(alert.bookingId);
+
+  const openUpcomingJobs = () => {
+    navigation.navigate('TechnicianTabs', {
+      screen: 'TechnicianJobs',
+      params: { initialTab: 'Upcoming' },
+    });
+  };
 
   return (
     <ScreenWrapper
@@ -31,38 +75,44 @@ export default function TechnicianJobAlertScreen({ navigation }) {
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.timerWrap}>
-              <Text style={styles.timerText}>{jobAlert.countdown}</Text>
+              <Text style={styles.timerText}>{alert.countdown}</Text>
             </View>
 
-            <Text style={styles.title}>New Job Available!</Text>
+            <Text style={styles.title}>{hasLiveJob ? 'New Job Available!' : 'Open New Jobs'}</Text>
             <Text style={styles.subtitle}>
-              Auto-declines if not accepted in time
+              {hasLiveJob
+                ? 'Review the live booking details before accepting.'
+                : 'This alert screen now opens only live technician jobs.'}
             </Text>
 
             <TechCard style={styles.jobCard}>
               <View style={styles.jobHead}>
                 <View style={styles.jobIconWrap}>
-                  <Icon name="pipe-leak" size={28} color={TECH_COLORS.coral} />
+                  <Icon name="briefcase-outline" size={28} color={TECH_COLORS.coral} />
                 </View>
                 <View style={styles.jobHeadCopy}>
-                  <Text style={styles.jobTitle}>{job.service} - {job.issue}</Text>
-                  <Text style={styles.jobLabel}>{job.bookingType} booking · Same day</Text>
+                  <Text style={styles.jobTitle}>{alert.title}</Text>
+                  <Text style={styles.jobLabel}>
+                    {alert.bookingType || 'Priority'} booking
+                    {alert.bookingNumber ? ` | ${alert.bookingNumber}` : ''}
+                  </Text>
                 </View>
               </View>
 
+              <Text style={styles.issueText}>{alert.issue}</Text>
+
               <View style={styles.grid}>
                 {[
-                  ['Area', job.location.area],
-                  ['Distance', job.location.distance],
-                  ['Visit charge', `Rs ${job.fees.visitCharge}`],
-                  ['Time Slot', job.scheduledSlot],
+                  ['Area', alert.area],
+                  ['Visit charge', alert.visitCharge > 0 ? formatCurrency(alert.visitCharge) : 'Pending'],
+                  ['Time Slot', alert.timeSlot || 'Schedule pending'],
                 ].map(([label, value]) => (
                   <View key={label} style={styles.gridCell}>
                     <Text style={styles.gridLabel}>{label}</Text>
                     <Text
                       style={[
                         styles.gridValue,
-                        label.includes('Visit Fee') && styles.gridValueSuccess,
+                        label === 'Visit charge' && styles.gridValueSuccess,
                       ]}
                     >
                       {value}
@@ -70,24 +120,46 @@ export default function TechnicianJobAlertScreen({ navigation }) {
                   </View>
                 ))}
               </View>
+
+              <View style={styles.addressCard}>
+                <Icon name="map-marker-outline" size={18} color={TECH_COLORS.emerald} />
+                <View style={styles.addressCopy}>
+                  <Text style={styles.addressLabel}>Customer address</Text>
+                  <Text style={styles.addressText}>{alert.address}</Text>
+                </View>
+              </View>
             </TechCard>
 
             <View style={styles.actions}>
               <TouchableOpacity
                 activeOpacity={0.86}
                 style={styles.declineButton}
-                onPress={() => navigation.goBack()}
+                onPress={() => {
+                  if (hasLiveJob) {
+                    navigation.goBack();
+                    return;
+                  }
+
+                  openUpcomingJobs();
+                }}
               >
-                <Text style={styles.declineText}>Decline</Text>
+                <Text style={styles.declineText}>{hasLiveJob ? 'Close' : 'View Queue'}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 activeOpacity={0.9}
                 style={styles.acceptButton}
-                onPress={() => navigation.replace('TechnicianJobDetail', { jobId: job.id })}
+                onPress={() => {
+                  if (hasLiveJob) {
+                    navigation.replace('TechnicianJobDetail', { jobId: alert.bookingId });
+                    return;
+                  }
+
+                  openUpcomingJobs();
+                }}
               >
-                <Text style={styles.acceptText}>Accept Job</Text>
-                <Icon name="check" size={18} color={TECH_COLORS.bg} />
+                <Text style={styles.acceptText}>{hasLiveJob ? 'Open Job' : 'Open My Jobs'}</Text>
+                <Icon name="arrow-right" size={18} color={TECH_COLORS.bg} />
               </TouchableOpacity>
             </View>
           </View>
@@ -122,8 +194,9 @@ const createStyles = ({
   },
   timerWrap: {
     alignSelf: 'center',
-    width: 56,
+    minWidth: 56,
     height: 56,
+    paddingHorizontal: 12,
     borderRadius: 28,
     borderWidth: 3,
     borderColor: TECH_COLORS.coral,
@@ -155,7 +228,7 @@ const createStyles = ({
   jobHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   jobIconWrap: {
     width: 50,
@@ -181,10 +254,42 @@ const createStyles = ({
     fontSize: 11,
     color: TECH_COLORS.textMuted,
   },
+  issueText: {
+    marginBottom: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    color: TECH_COLORS.textSecondary,
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  addressCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 14,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: TECH_COLORS.border,
+    backgroundColor: TECH_COLORS.bg,
+  },
+  addressCopy: {
+    flex: 1,
+    paddingLeft: 10,
+  },
+  addressLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    color: TECH_COLORS.textMuted,
+  },
+  addressText: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+    color: TECH_COLORS.text,
   },
   gridCell: {
     width: '48%',

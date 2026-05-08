@@ -3,43 +3,43 @@
 
 drop table if exists public.service_severity_pricing cascade;
 
-create table if not exists public.booking_severity_pricing (
+create table if not exists public.severity_pricing (
   severity text primary key,
   visit_charge numeric(10, 2) not null default 0,
   platform_fee numeric(10, 2) not null default 0,
   sort_order integer not null default 0,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
-  constraint booking_severity_pricing_severity_chk
+  constraint severity_pricing_severity_chk
     check (severity in ('minor', 'moderate', 'urgent')),
-  constraint booking_severity_pricing_visit_charge_chk
+  constraint severity_pricing_visit_charge_chk
     check (visit_charge >= 0),
-  constraint booking_severity_pricing_platform_fee_chk
+  constraint severity_pricing_platform_fee_chk
     check (platform_fee >= 0)
 );
 
-create index if not exists booking_severity_pricing_sort_order_idx
-  on public.booking_severity_pricing(sort_order);
+create index if not exists severity_pricing_sort_order_idx
+  on public.severity_pricing(sort_order);
 
-drop trigger if exists booking_severity_pricing_set_updated_at on public.booking_severity_pricing;
-create trigger booking_severity_pricing_set_updated_at
-  before update on public.booking_severity_pricing
+drop trigger if exists severity_pricing_set_updated_at on public.severity_pricing;
+create trigger severity_pricing_set_updated_at
+  before update on public.severity_pricing
   for each row
   execute procedure public.set_updated_at();
 
-alter table public.booking_severity_pricing enable row level security;
+alter table public.severity_pricing enable row level security;
 
-revoke all on table public.booking_severity_pricing from anon, authenticated;
-grant select on table public.booking_severity_pricing to authenticated;
+revoke all on table public.severity_pricing from anon, authenticated;
+grant select on table public.severity_pricing to authenticated;
 
-drop policy if exists "booking_severity_pricing_select_authenticated" on public.booking_severity_pricing;
-create policy "booking_severity_pricing_select_authenticated"
-on public.booking_severity_pricing
+drop policy if exists "severity_pricing_select_authenticated" on public.severity_pricing;
+create policy "severity_pricing_select_authenticated"
+on public.severity_pricing
 for select
 to authenticated
 using (true);
 
-insert into public.booking_severity_pricing (
+insert into public.severity_pricing (
   severity,
   visit_charge,
   platform_fee,
@@ -63,7 +63,7 @@ as $$
 declare
   selected_service public.services%rowtype;
   selected_problem public.service_problems%rowtype;
-  selected_booking_pricing public.booking_severity_pricing%rowtype;
+  selected_booking_pricing public.severity_pricing%rowtype;
   selected_address public.addresses%rowtype;
   selected_profile public.profiles%rowtype;
 begin
@@ -81,7 +81,7 @@ begin
 
   select *
   into selected_booking_pricing
-  from public.booking_severity_pricing
+  from public.severity_pricing
   where severity = new.severity;
 
   if not found then
@@ -163,3 +163,4 @@ begin
   return new;
 end;
 $$;
+

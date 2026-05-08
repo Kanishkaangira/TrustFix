@@ -32,9 +32,25 @@ const getAuthenticatedUser = async (authHeader: string, apikey: string) => {
   return { user: payload || null, error: null };
 };
 
-const getPaymentAmount = (booking: Record<string, unknown>, paymentStage: string) => {
+const getApprovedInvoiceTotal = (
+  booking: Record<string, unknown>,
+  completionRecord: Record<string, unknown> | null,
+) => (
+  Number(
+    completionRecord?.final_customer_total
+    ?? booking.proposed_invoice_total
+    ?? booking.estimated_total
+    ?? 0,
+  )
+);
+
+const getPaymentAmount = (
+  booking: Record<string, unknown>,
+  paymentStage: string,
+  completionRecord: Record<string, unknown> | null,
+) => {
   if (paymentStage === 'final_invoice') {
-    return Number(booking.final_invoice_total ?? booking.estimated_total ?? 0);
+    return getApprovedInvoiceTotal(booking, completionRecord);
   }
 
   return (
@@ -51,7 +67,7 @@ const normalizeText = (value: unknown) => {
 
 const normalizeUuid = (value: unknown) => normalizeText(value);
 
-const createBookingCheckoutSession = async (
+const createCheckoutFinancialRecord = async (
   adminClient: ReturnType<typeof buildAdminClient>,
   userId: string,
   bookingDraft: Record<string, unknown>,
@@ -137,7 +153,7 @@ const createBookingCheckoutSession = async (
   }
 
   const { data: pricing, error: pricingError } = await adminClient
-    .from('booking_severity_pricing')
+    .from('severity_pricing')
     .select('severity, visit_charge, platform_fee')
     .eq('severity', severity)
     .maybeSingle();
@@ -155,9 +171,10 @@ const createBookingCheckoutSession = async (
   const platformFee = Number(pricing.platform_fee ?? 0);
   const initialAmount = visitCharge + platformFee + protectionFee;
 
-  const { data: session, error: sessionError } = await adminClient
-    .from('booking_checkout_sessions')
+  const { data: record, error: recordError } = await adminClient
+    .from('booking_financial_records')
     .insert({
+      record_type: 'checkout',
       user_id: userId,
       address_id: addressId,
       service_id: serviceId,
@@ -168,37 +185,35 @@ const createBookingCheckoutSession = async (
       scheduled_slot_label: severity === 'minor' ? scheduledSlotLabel : null,
       protection_selected: protectionSelected,
       visit_charge: visitCharge,
-      platform_fee: platformFee,
-      protection_fee: protectionFee,
+      platform_fee_amount: platformFee,
+      protection_fee_amount: protectionFee,
       initial_amount: initialAmount,
       status: 'created',
     })
     .select('*')
     .single();
 
-  if (sessionError) {
-    return { data: null, error: { message: sessionError.message } };
+  if (recordError) {
+    return { data: null, error: { message: recordError.message } };
   }
 
-  return { data: session, error: null };
+  return { data: record, error: null };
 };
 
 const getPaymentBreakdown = (
   booking: Record<string, unknown>,
   paymentStage: string,
-  completionReport: Record<string, unknown> | null,
+  completionRecord: Record<string, unknown> | null,
 ) => {
   if (paymentStage === 'final_invoice') {
     return {
-      platformFeeAmount: Number(booking.platform_fee ?? 0),
-      visitFeeAmount: Number(completionReport?.final_visit_charge ?? booking.final_visit_charge ?? booking.visit_charge ?? 0),
-      labourAmount: Number(completionReport?.final_labour_amount ?? booking.final_labour_charge ?? 0),
-      partsAmount: Number(completionReport?.final_parts_amount ?? booking.final_parts_charge ?? 0),
-      protectionFeeAmount: Number(booking.protection_fee ?? 0),
-      urgencySurchargeAmount: Number(booking.urgency_surcharge ?? 0),
-      commissionBaseAmount: Number(completionReport?.commissionable_total ?? 0),
-      technicianSettlementAmount: Number(completionReport?.technician_payout_amount ?? 0),
-      invoiceVersionNo: Number(completionReport?.version_no ?? 1),
+      platformFeeAmount: Number(completionRecord?.platform_fee_amount ?? booking.platform_fee ?? 0),
+      visitFeeAmount: Number(completionRecord?.final_visit_charge ?? booking.visit_charge ?? 0),
+      labourAmount: Number(completionRecord?.final_labour_amount ?? booking.proposed_labour_charge ?? 0),
+      partsAmount: Number(completionRecord?.final_parts_amount ?? booking.proposed_parts_charge ?? 0),
+      protectionFeeAmount: Number(completionRecord?.protection_fee_amount ?? booking.protection_fee ?? 0),
+      urgencySurchargeAmount: Number(completionRecord?.urgency_surcharge_amount ?? booking.urgency_surcharge ?? 0),
+      invoiceVersionNo: 1,
     };
   }
 
@@ -209,8 +224,6 @@ const getPaymentBreakdown = (
     partsAmount: 0,
     protectionFeeAmount: Number(booking.protection_fee ?? 0),
     urgencySurchargeAmount: Number(booking.urgency_surcharge ?? 0),
-    commissionBaseAmount: 0,
-    technicianSettlementAmount: 0,
     invoiceVersionNo: null,
   };
 };
@@ -256,23 +269,23 @@ Deno.serve(async (req) => {
   let bookingRecord: Record<string, unknown> | null = null;
   let bookingError: { message: string } | null = null;
   let technicianId: string | null = null;
-  let completionReport: Record<string, unknown> | null = null;
-  let checkoutSession: Record<string, unknown> | null = null;
+  let completionRecord: Record<string, unknown> | null = null;
+  let checkoutRecord: Record<string, unknown> | null = null;
 
   if (paymentStage === 'booking_fee') {
-    const checkoutSessionResult = await createBookingCheckoutSession(
+    const checkoutRecordResult = await createCheckoutFinancialRecord(
       adminClient,
       user.id,
       bookingDraft ?? {},
     );
 
-    if (checkoutSessionResult.error || !checkoutSessionResult.data) {
+    if (checkoutRecordResult.error || !checkoutRecordResult.data) {
       return json({
-        error: checkoutSessionResult.error?.message || 'Could not prepare the booking checkout.',
+        error: checkoutRecordResult.error?.message || 'Could not prepare the booking checkout.',
       }, 400);
     }
 
-    checkoutSession = checkoutSessionResult.data;
+    checkoutRecord = checkoutRecordResult.data;
     bookingRecord = null;
   } else {
     if (!bookingId) {
@@ -298,7 +311,6 @@ Deno.serve(async (req) => {
     }
 
     const finalInvoiceStatus = String(bookingRecord.status ?? '').trim();
-    const finalInvoiceTotal = Number(bookingRecord.final_invoice_total ?? 0);
     const finalPaymentStatus = String(bookingRecord.payment_status ?? '').trim();
 
     if (!['estimate_approved', 'in_progress', 'payment_pending'].includes(finalInvoiceStatus)) {
@@ -308,39 +320,41 @@ Deno.serve(async (req) => {
     if (finalPaymentStatus === 'paid') {
       return json({ error: 'This final bill has already been paid.' }, 400);
     }
+  }
 
-    if (finalInvoiceTotal <= 0) {
+  if (paymentStage === 'final_invoice') {
+    const { data: completionRecordData } = await adminClient
+      .from('booking_financial_records')
+      .select('*')
+      .eq('booking_id', bookingRecord.id)
+      .eq('record_type', 'completion')
+      .maybeSingle();
+
+    completionRecord = completionRecordData ?? null;
+    technicianId = completionRecordData?.technician_id ?? bookingRecord?.technician_id ?? null;
+
+    if (getApprovedInvoiceTotal(bookingRecord as Record<string, unknown>, completionRecord) <= 0) {
       return json({ error: 'Final bill amount is not available yet.' }, 400);
     }
   }
 
-  if (paymentStage === 'final_invoice') {
-    const { data: completionReportData } = await adminClient
-      .from('booking_completion_reports')
-      .select('*')
-      .eq('booking_id', bookingRecord.id)
-      .maybeSingle();
-
-    completionReport = completionReportData ?? null;
-    technicianId = completionReportData?.technician_id ?? bookingRecord?.technician_id ?? null;
-  }
-
   const amount = paymentStage === 'booking_fee'
-    ? Number(checkoutSession?.initial_amount ?? 0)
-    : getPaymentAmount(bookingRecord as Record<string, unknown>, paymentStage);
+    ? Number(checkoutRecord?.initial_amount ?? 0)
+    : getPaymentAmount(bookingRecord as Record<string, unknown>, paymentStage, completionRecord);
+  const activeFinancialRecordId = paymentStage === 'booking_fee'
+    ? checkoutRecord?.id ?? null
+    : completionRecord?.id ?? null;
   const breakdown = paymentStage === 'booking_fee'
     ? {
-        platformFeeAmount: Number(checkoutSession?.platform_fee ?? 0),
-        visitFeeAmount: Number(checkoutSession?.visit_charge ?? 0),
+        platformFeeAmount: Number(checkoutRecord?.platform_fee_amount ?? 0),
+        visitFeeAmount: Number(checkoutRecord?.visit_charge ?? 0),
         labourAmount: 0,
         partsAmount: 0,
-        protectionFeeAmount: Number(checkoutSession?.protection_fee ?? 0),
+        protectionFeeAmount: Number(checkoutRecord?.protection_fee_amount ?? 0),
         urgencySurchargeAmount: 0,
-        commissionBaseAmount: 0,
-        technicianSettlementAmount: 0,
         invoiceVersionNo: null,
       }
-    : getPaymentBreakdown(bookingRecord as Record<string, unknown>, paymentStage, completionReport);
+    : getPaymentBreakdown(bookingRecord as Record<string, unknown>, paymentStage, completionRecord);
 
   if (!amount || amount <= 0) {
     return json({ error: 'No payable amount found for this booking.' }, 400);
@@ -356,13 +370,13 @@ Deno.serve(async (req) => {
       amount: Math.round(amount * 100),
       currency: 'INR',
       receipt: paymentStage === 'booking_fee'
-        ? `${paymentStage}-${String(checkoutSession?.id ?? '').slice(0, 8)}`
+        ? `${paymentStage}-${String(checkoutRecord?.id ?? '').slice(0, 8)}`
         : `${paymentStage}-${bookingRecord?.booking_number ?? bookingRecord?.id}`,
       notes: {
         booking_id: bookingRecord?.id ? String(bookingRecord.id) : '',
         booking_number: String(bookingRecord?.booking_number ?? ''),
         payment_stage: paymentStage,
-        checkout_session_id: String(checkoutSession?.id ?? ''),
+        financial_record_id: String(activeFinancialRecordId ?? ''),
       },
     }),
   });
@@ -393,17 +407,15 @@ Deno.serve(async (req) => {
       parts_amount: breakdown.partsAmount,
       protection_fee_amount: breakdown.protectionFeeAmount,
       urgency_surcharge_amount: breakdown.urgencySurchargeAmount,
-      commission_base_amount: breakdown.commissionBaseAmount,
-      technician_settlement_amount: breakdown.technicianSettlementAmount,
       invoice_version_no: breakdown.invoiceVersionNo,
       receipt: paymentStage === 'booking_fee'
-        ? `${paymentStage}-${String(checkoutSession?.id ?? '').slice(0, 8)}`
+        ? `${paymentStage}-${String(checkoutRecord?.id ?? '').slice(0, 8)}`
         : `${paymentStage}-${bookingRecord?.booking_number ?? bookingRecord?.id}`,
       provider_order_id: razorpayPayload.id,
       notes: {
         booking_number: bookingRecord?.booking_number ?? null,
         payment_stage: paymentStage,
-        checkout_session_id: checkoutSession?.id ?? null,
+        financial_record_id: activeFinancialRecordId,
         visit_charge: breakdown.visitFeeAmount,
         platform_fee: breakdown.platformFeeAmount,
         labour_amount: breakdown.labourAmount,
@@ -420,11 +432,12 @@ Deno.serve(async (req) => {
 
   if (paymentStage === 'booking_fee') {
     await adminClient
-      .from('booking_checkout_sessions')
+      .from('booking_financial_records')
       .update({
         status: 'order_created',
       })
-      .eq('id', checkoutSession?.id);
+      .eq('id', checkoutRecord?.id)
+      .eq('record_type', 'checkout');
   } else {
     await adminClient
       .from('bookings')
@@ -435,6 +448,15 @@ Deno.serve(async (req) => {
         gateway_order_id: razorpayPayload.id,
       })
       .eq('id', bookingRecord?.id);
+
+    await adminClient
+      .from('booking_financial_records')
+      .update({
+        status: 'requested',
+        payment_requested_at: new Date().toISOString(),
+      })
+      .eq('booking_id', bookingRecord?.id)
+      .eq('record_type', 'completion');
   }
 
   return json({
@@ -447,3 +469,4 @@ Deno.serve(async (req) => {
     },
   });
 });
+

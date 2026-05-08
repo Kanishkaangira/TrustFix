@@ -25,7 +25,7 @@ import {
   TechScreenHeader,
 } from '../../technician/components/TechUi';
 
-const formatCurrency = (value) => `₹${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
+const formatCurrency = (value) => `Rs ${Math.round(Number(value || 0)).toLocaleString('en-IN')}`;
 
 const formatSeverityLabel = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -50,7 +50,7 @@ const formatSchedule = (booking = {}) => {
   const slot = String(booking.scheduled_slot_label || '').trim();
 
   if (date && slot) {
-    return `${date} • ${slot}`;
+    return `${date} | ${slot}`;
   }
 
   return date || slot || 'Schedule pending';
@@ -121,7 +121,7 @@ const getDetailCtaConfig = (assignmentStatus, bookingStatus) => {
   }
 
   return {
-    label: 'Open Route',
+    label: bookingStatus === 'en_route' ? 'Open Route' : 'Start Job',
     route: 'TechnicianEnRoute',
   };
 };
@@ -179,6 +179,7 @@ export default function TechnicianJobDetailScreen({ navigation, route }) {
   const severityLabel = formatSeverityLabel(booking.severity);
   const serviceName = String(booking.service_name_snapshot || 'Service request').trim();
   const ctaConfig = getDetailCtaConfig(assignment.status, String(booking.status || '').trim());
+
   return (
     <ScreenWrapper
       topColor={TECH_COLORS.bg}
@@ -233,7 +234,7 @@ export default function TechnicianJobDetailScreen({ navigation, route }) {
 
                 <View style={styles.bannerMeta}>
                   <Text style={styles.bannerMetaText}>{booking.booking_number || 'Booking pending'}</Text>
-                  <Text style={styles.bannerMetaDot}>•</Text>
+                  <Text style={styles.bannerMetaDot}>|</Text>
                   <Text style={styles.bannerMetaText}>{scheduleLabel}</Text>
                 </View>
               </LinearGradient>
@@ -269,8 +270,11 @@ export default function TechnicianJobDetailScreen({ navigation, route }) {
                     <View style={styles.addressCopy}>
                       <Text style={styles.addressText}>
                         {booking.address_label_snapshot
-                          ? `${booking.address_label_snapshot} • ${booking.address_snapshot || 'Address pending'}`
+                          ? `${booking.address_label_snapshot} - ${booking.address_snapshot || 'Address pending'}`
                           : booking.address_snapshot || 'Address pending'}
+                      </Text>
+                      <Text style={styles.addressHint}>
+                        Customer location saved for this visit.
                       </Text>
                     </View>
                   </View>
@@ -478,6 +482,12 @@ const createStyles = ({
     fontSize: 13,
     lineHeight: 18,
     color: TECH_COLORS.textSecondary,
+  },
+  addressHint: {
+    marginTop: 6,
+    fontSize: 11,
+    lineHeight: 17,
+    color: TECH_COLORS.textMuted,
   },
   infoCard: {
     paddingHorizontal: 16,

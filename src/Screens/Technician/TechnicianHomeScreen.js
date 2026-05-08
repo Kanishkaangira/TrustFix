@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -8,14 +9,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../Components/ScreenWrapper';
-import {
-  dashboardStats,
-  technicianJobs,
-} from '../../technician/mockData';
+import { fetchTechnicianEarnings } from '../../technician/earningsStore';
+import { fetchTechnicianAssignments } from '../../technician/jobAssignmentEngine';
 import {
   getTechnicianProfile,
   subscribeToTechnicianProfile,
@@ -27,30 +27,145 @@ import {
   TechBadge,
   TechCard,
   TechGradientButton,
+  TechIconBubble,
   TechMetricCard,
   TechSection,
 } from '../../technician/components/TechUi';
 
+const getHomeJobPrimaryAction = (job) => {
+  const bookingStatus = String(job?.raw?.bookings?.status || '').trim();
+
+  if ([
+    'otp_verified',
+    'estimate_sent',
+    'estimate_revision_requested',
+    'estimate_approved',
+    'in_progress',
+    'work_completed',
+    'payment_pending',
+    'payment_requested',
+  ].includes(bookingStatus)) {
+    return { label: 'Open Job Progress', route: 'TechnicianJobInProgress' };
+  }
+
+  if (bookingStatus === 'arrived') {
+    return { label: 'Open OTP', route: 'TechnicianSafetyOtp' };
+  }
+
+  return {
+    label: bookingStatus === 'en_route' ? 'Open Route' : 'Start Job',
+    route: 'TechnicianEnRoute',
+  };
+};
+
 export default function TechnicianHomeScreen({ navigation }) {
   const {
     colors: TECH_COLORS,
-    getTone: getTechTone,
     isDark,
     styles,
   } = useTechScreenTheme(createStyles);
   const [isUpdatingAvailability, setIsUpdatingAvailability] = useState(false);
   const [profile, setProfile] = useState(() => getTechnicianProfile());
+  const [homeMetrics, setHomeMetrics] = useState({
+    dailyEarnings: '₹0',
+    dailySubtitle: '0 completed jobs today',
+    jobsDone: String(getTechnicianProfile()?.jobsDone || '0'),
+    jobsDoneSubtitle: 'Completed services overall',
+  });
+  const [activeJobs, setActiveJobs] = useState([]);
+  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
 
   useEffect(() => {
-    syncTechnicianProfileFromRemote();
+    const loadHomeData = async () => {
+      setIsLoadingJobs(true);
+
+      const [profileResult, earningsResult, assignmentsResult] = await Promise.all([
+        syncTechnicianProfileFromRemote(),
+        fetchTechnicianEarnings(),
+        fetchTechnicianAssignments(),
+      ]);
+
+      const nextProfile = profileResult?.data || getTechnicianProfile();
+      const dailyPeriod = earningsResult?.data?.periods?.Daily;
+      const totalPeriod = earningsResult?.data?.periods?.Total;
+      const jobsDoneValue = String(
+        totalPeriod?.jobsDone ||
+        nextProfile?.jobsDone ||
+        getTechnicianProfile()?.jobsDone ||
+        '0',
+      );
+
+      setHomeMetrics({
+        dailyEarnings: dailyPeriod?.totalValue || '₹0',
+        dailySubtitle: dailyPeriod?.subtitle || '0 completed jobs today',
+        jobsDone: jobsDoneValue,
+        jobsDoneSubtitle: 'Completed services overall',
+      });
+
+      if (!assignmentsResult?.error && assignmentsResult?.data?.Active) {
+        setActiveJobs(assignmentsResult.data.Active.slice(0, 3));
+      } else {
+        setActiveJobs([]);
+      }
+
+      setIsLoadingJobs(false);
+    };
+
+    loadHomeData();
     return subscribeToTechnicianProfile(setProfile);
   }, []);
 
-  const isOnline = Boolean(profile.isAvailable);
+  useFocusEffect(
+    React.useCallback(() => {
+      const refreshHomeData = async () => {
+        setIsLoadingJobs(true);
 
-  const handleNavigate = routeName => {
-    navigation.navigate(routeName);
-  };
+        const [profileResult, earningsResult, assignmentsResult] = await Promise.all([
+          syncTechnicianProfileFromRemote(),
+          fetchTechnicianEarnings(),
+          fetchTechnicianAssignments(),
+        ]);
+
+        const nextProfile = profileResult?.data || getTechnicianProfile();
+        const dailyPeriod = earningsResult?.data?.periods?.Daily;
+        const totalPeriod = earningsResult?.data?.periods?.Total;
+        const jobsDoneValue = String(
+          totalPeriod?.jobsDone ||
+          nextProfile?.jobsDone ||
+          getTechnicianProfile()?.jobsDone ||
+          '0',
+        );
+
+        setHomeMetrics((current) => ({
+          ...current,
+          dailyEarnings: dailyPeriod?.totalValue || current.dailyEarnings,
+          dailySubtitle: dailyPeriod?.subtitle || '0 completed jobs today',
+          jobsDone: jobsDoneValue,
+          jobsDoneSubtitle: 'Completed services overall',
+        }));
+
+        if (!assignmentsResult?.error && assignmentsResult?.data?.Active) {
+          setActiveJobs(assignmentsResult.data.Active.slice(0, 3));
+        } else {
+          setActiveJobs([]);
+        }
+
+        setIsLoadingJobs(false);
+      };
+
+      refreshHomeData();
+
+      const intervalId = setInterval(() => {
+        refreshHomeData();
+      }, 6000);
+
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, []),
+  );
+
+  const isOnline = Boolean(profile.isAvailable);
 
   const openProfileRoute = routeName => {
     const parentNavigation = navigation.getParent?.();
@@ -232,95 +347,111 @@ export default function TechnicianHomeScreen({ navigation }) {
           <View style={styles.metricGrid}>
             <TechMetricCard
               label="Today's Earnings"
-              value={dashboardStats.today}
-              subtitle={dashboardStats.todayJobs}
+              value={homeMetrics.dailyEarnings}
+              subtitle={homeMetrics.dailySubtitle}
               tone="amber"
               style={styles.metricCard}
             />
             <TechMetricCard
-              label="This Month"
-              value={dashboardStats.month}
-              subtitle={dashboardStats.monthJobs}
+              label="Jobs Done"
+              value={homeMetrics.jobsDone}
+              subtitle={homeMetrics.jobsDoneSubtitle}
               tone="emerald"
               style={styles.metricCard}
             />
           </View>
 
           <TechGradientButton
-            label="Open New Job Alert Demo"
-            onPress={() => handleNavigate('TechnicianJobAlert')}
+            label="View New Job"
+            onPress={() => navigation.navigate('TechnicianJobs', { initialTab: 'Upcoming' })}
             variant="emerald"
             icon="bell-ring-outline"
             style={styles.alertButton}
           />
 
           <View style={styles.sectionWrap}>
-            <TechSection title="Today's Jobs" action="2 Active" />
+            <TechSection
+              title="Today's Jobs"
+              action={`${activeJobs.length} ${activeJobs.length === 1 ? 'Active Job' : 'Active Jobs'}`}
+            />
           </View>
 
-          {technicianJobs.map((job, index) => {
-            const tone = getTechTone(job.iconBg);
+          {isLoadingJobs ? (
+            <TechCard style={styles.jobsStateCard}>
+              <ActivityIndicator color={TECH_COLORS.coral} />
+              <Text style={styles.jobsStateTitle}>Loading active jobs</Text>
+              <Text style={styles.jobsStateText}>Fetching your current technician assignments.</Text>
+            </TechCard>
+          ) : null}
+
+          {!isLoadingJobs && !activeJobs.length ? (
+            <TechCard style={styles.jobsStateCard}>
+              <Icon name="briefcase-outline" size={26} color={TECH_COLORS.textMuted} />
+              <Text style={styles.jobsStateTitle}>No active jobs right now</Text>
+              <Text style={styles.jobsStateText}>
+                Accepted jobs will appear here automatically as they move forward.
+              </Text>
+            </TechCard>
+          ) : null}
+
+          {!isLoadingJobs && activeJobs.map((job, index) => {
+            const primaryAction = getHomeJobPrimaryAction(job);
+            const highlighted = index === 0;
 
             return (
-              <TechCard key={job.id} style={styles.jobCard}>
-                <View style={styles.jobTopRow}>
-                  <View
-                    style={[
-                      styles.jobIconWrap,
-                      { backgroundColor: tone.bg, borderColor: tone.border },
-                    ]}
-                  >
-                    <Icon name={job.icon} size={20} color={tone.text} />
+              <TechCard
+                key={job.id}
+                style={[styles.jobCard, highlighted && styles.highlightedCard]}
+              >
+                <View style={styles.jobAccentBar} />
+
+                <View style={styles.cardTopRow}>
+                  <View style={styles.jobIdentity}>
+                    <TechIconBubble icon={job.icon} tone={job.iconBg} size={44} />
+
+                    <View style={styles.jobCopyBlock}>
+                      <Text style={styles.jobTitle}>{job.title}</Text>
+                      <Text style={styles.jobIssue} numberOfLines={1}>{job.issue}</Text>
+                      <Text style={styles.jobBookingMeta} numberOfLines={1}>
+                        {job.bookingNumber || 'Booking pending'} • {job.customerName}
+                      </Text>
+                    </View>
                   </View>
 
-                  <View style={styles.jobCopyCard}>
-                    <View style={styles.jobTitleRow}>
-                      <Text style={styles.jobTitle}>{job.title}</Text>
-                      <TechBadge
-                        label={job.status}
-                        tone={job.statusTone === 'amber' ? 'amber' : 'emerald'}
-                      />
-                    </View>
-                    <Text style={styles.jobSub}>
-                      {job.issue} - {job.area}
-                    </Text>
-                    <View style={styles.jobMeta}>
-                      <Text style={styles.slotText}>{job.slot}</Text>
-                      <Text style={styles.dotSep}>-</Text>
-                      <Text style={styles.metaText}>{job.visitText}</Text>
-                    </View>
+                  <TechBadge label={job.status} tone={job.statusTone} />
+                </View>
+
+                <View style={styles.jobLocationRow}>
+                  <Icon name="map-marker-outline" size={15} color={TECH_COLORS.textMuted} />
+                  <Text style={styles.jobLocationValue} numberOfLines={1}>
+                    {job.areaLabel ? `${job.areaLabel} • ${job.area}` : job.area}
+                  </Text>
+                </View>
+
+                <View style={styles.metaRow}>
+                  <View style={styles.metaChip}>
+                    <Icon name="clock-outline" size={14} color={TECH_COLORS.gold} />
+                    <Text style={styles.metaChipText}>{job.slot}</Text>
+                  </View>
+
+                  <View style={styles.metaChip}>
+                    <Icon name="cash-multiple" size={14} color={TECH_COLORS.emerald} />
+                    <Text style={styles.metaChipText}>{job.initialFeeLabel}</Text>
                   </View>
                 </View>
 
-                <View style={styles.jobActions}>
-                  <TouchableOpacity
-                    activeOpacity={0.86}
-                    style={styles.secondaryJobButton}
-                    onPress={() =>
-                      navigation.navigate(
-                        index === 0
-                          ? 'TechnicianJobInProgress'
-                          : 'TechnicianEnRoute',
-                        { jobId: job.id },
-                      )
-                    }
-                  >
-                    <Text style={styles.secondaryJobText}>
-                      {index === 0 ? 'Open Live Job' : 'Open Route'}
-                    </Text>
-                  </TouchableOpacity>
-
+                <View style={styles.actionRow}>
                   <TouchableOpacity
                     activeOpacity={0.9}
-                    style={styles.primaryJobButton}
-                    onPress={() => navigation.navigate('TechnicianJobDetail', { jobId: job.id })}
+                    style={[
+                      styles.actionButtonPrimary,
+                      styles.singleActionButton,
+                      highlighted && styles.actionButtonPrimaryHighlighted,
+                    ]}
+                    onPress={() => navigation.navigate('TechnicianJobDetail', { jobId: job.bookingId })}
                   >
-                    <Text style={styles.primaryJobText}>View Job</Text>
-                    <Icon
-                      name="arrow-right"
-                      size={16}
-                      color={TECH_COLORS.white}
-                    />
+                    <Text style={styles.actionPrimaryText}>{primaryAction.label}</Text>
+                    <Icon name="arrow-right" size={16} color={TECH_COLORS.white} />
                   </TouchableOpacity>
                 </View>
               </TechCard>
@@ -636,99 +767,131 @@ const createStyles = ({
       marginTop: 14,
       marginBottom: 12,
     },
+    jobsStateCard: {
+      marginHorizontal: 20,
+      marginBottom: 10,
+      padding: 18,
+      alignItems: 'center',
+    },
+    jobsStateTitle: {
+      marginTop: 10,
+      fontSize: 15,
+      fontWeight: '800',
+      color: TECH_COLORS.text,
+    },
+    jobsStateText: {
+      marginTop: 6,
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+      color: TECH_COLORS.textSecondary,
+    },
     sectionWrap: {
       marginHorizontal: 20,
       marginTop: 2,
     },
     jobCard: {
-      padding: 14,
       marginHorizontal: 20,
+      marginTop: 14,
       marginBottom: 10,
+      padding: 14,
+      overflow: 'hidden',
     },
-    jobTopRow: {
+    highlightedCard: {
+      borderColor: TECH_COLORS.coral,
+    },
+    jobAccentBar: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 4,
+      backgroundColor: TECH_COLORS.coral,
+    },
+    cardTopRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
-    },
-    jobIconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      borderWidth: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
-    },
-    jobCopyCard: {
-      flex: 1,
-    },
-    jobTitleRow: {
-      flexDirection: 'row',
       justifyContent: 'space-between',
       gap: 10,
     },
+    jobIdentity: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    jobCopyBlock: {
+      flex: 1,
+    },
     jobTitle: {
       flex: 1,
-      fontSize: 14,
-      fontWeight: '800',
+      fontSize: 16,
+      fontWeight: '900',
       color: TECH_COLORS.text,
     },
-    jobSub: {
-      marginTop: 3,
+    jobIssue: {
+      marginTop: 2,
+      fontSize: 12,
+      color: TECH_COLORS.textSecondary,
+    },
+    jobBookingMeta: {
+      marginTop: 4,
       fontSize: 11,
       color: TECH_COLORS.textMuted,
     },
-    jobMeta: {
+    jobLocationRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      flexWrap: 'wrap',
-      marginTop: 8,
-    },
-    slotText: {
-      fontSize: 11,
-      color: TECH_COLORS.gold,
-      fontWeight: '800',
-    },
-    dotSep: {
-      marginHorizontal: 6,
-      color: TECH_COLORS.textMuted,
-    },
-    metaText: {
-      fontSize: 11,
-      color: TECH_COLORS.textMuted,
-    },
-    jobActions: {
-      flexDirection: 'row',
       gap: 8,
-      marginTop: 14,
+      marginTop: 12,
     },
-    secondaryJobButton: {
+    jobLocationValue: {
       flex: 1,
-      minHeight: 42,
-      borderRadius: TECH_RADIUS.md,
+      fontSize: 12,
+      color: TECH_COLORS.textSecondary,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 12,
+    },
+    metaChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 999,
+      backgroundColor: TECH_COLORS.bgElevated,
       borderWidth: 1,
       borderColor: TECH_COLORS.border,
-      backgroundColor: TECH_COLORS.cardAlt,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
-    secondaryJobText: {
-      fontSize: 12,
+    metaChipText: {
+      fontSize: 11,
       fontWeight: '700',
       color: TECH_COLORS.textSecondary,
     },
-    primaryJobButton: {
-      flex: 1,
-      minHeight: 42,
-      borderRadius: TECH_RADIUS.md,
+    actionRow: {
+      marginTop: 14,
+    },
+    actionButtonPrimary: {
+      minHeight: 44,
+      borderRadius: 14,
       backgroundColor: TECH_COLORS.coral,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6,
-      ...TECH_SHADOWS.glow,
+      gap: 8,
     },
-    primaryJobText: {
-      fontSize: 12,
+    actionButtonPrimaryHighlighted: {
+      backgroundColor: TECH_COLORS.emerald,
+    },
+    singleActionButton: {
+      width: '100%',
+    },
+    actionPrimaryText: {
+      fontSize: 13,
       fontWeight: '800',
       color: TECH_COLORS.white,
     },

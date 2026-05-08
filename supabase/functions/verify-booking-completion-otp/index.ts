@@ -5,6 +5,7 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const OTP_TABLE = 'verification_otps';
 
 const buildAdminClient = () => createClient(supabaseUrl, supabaseServiceRoleKey);
 
@@ -105,7 +106,7 @@ Deno.serve(async (req) => {
   }
 
   await adminClient
-    .from('booking_verification_otps')
+    .from(OTP_TABLE)
     .update({
       status: 'expired',
       updated_at: nowIso,
@@ -116,7 +117,7 @@ Deno.serve(async (req) => {
     .lte('expires_at', nowIso);
 
   const { data: otpRecord, error: otpError } = await adminClient
-    .from('booking_verification_otps')
+    .from(OTP_TABLE)
     .select('id, otp_code, status, attempt_count, expires_at')
     .eq('booking_id', bookingId)
     .eq('purpose', 'completion_verification')
@@ -139,7 +140,7 @@ Deno.serve(async (req) => {
 
   if (otpRecord.expires_at && new Date(otpRecord.expires_at).getTime() <= Date.now()) {
     await adminClient
-      .from('booking_verification_otps')
+      .from(OTP_TABLE)
       .update({
         status: 'expired',
         updated_at: nowIso,
@@ -157,7 +158,7 @@ Deno.serve(async (req) => {
 
   if (String(otpRecord.otp_code || '').trim() !== sanitizedOtp) {
     await adminClient
-      .from('booking_verification_otps')
+      .from(OTP_TABLE)
       .update({
         attempt_count: nextAttemptCount,
         last_attempt_at: nowIso,
@@ -182,7 +183,7 @@ Deno.serve(async (req) => {
   }
 
   const { error: verifyUpdateError } = await adminClient
-    .from('booking_verification_otps')
+    .from(OTP_TABLE)
     .update({
       status: 'verified',
       attempt_count: nextAttemptCount,
@@ -201,7 +202,6 @@ Deno.serve(async (req) => {
     .from('bookings')
     .update({
       status: 'completed',
-      work_completed_at: nowIso,
       updated_at: nowIso,
     })
     .eq('id', bookingId)
@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
   }
 
   await adminClient
-    .from('booking_assignments')
+    .from('job_assignment')
     .update({
       status: 'completed',
       responded_at: nowIso,
@@ -228,3 +228,4 @@ Deno.serve(async (req) => {
     message: 'Final handoff verified. Job completed successfully.',
   });
 });
+

@@ -119,56 +119,19 @@ create table if not exists public.service_problems (
     check (default_severity in ('minor', 'moderate', 'urgent'))
 );
 
-create table if not exists public.booking_severity_pricing (
+create table if not exists public.severity_pricing (
   severity text primary key,
   visit_charge numeric(10, 2) not null default 0,
   platform_fee numeric(10, 2) not null default 0,
   sort_order integer not null default 0,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
-  constraint booking_severity_pricing_severity_chk
+  constraint severity_pricing_severity_chk
     check (severity in ('minor', 'moderate', 'urgent')),
-  constraint booking_severity_pricing_visit_charge_chk
+  constraint severity_pricing_visit_charge_chk
     check (visit_charge >= 0),
-  constraint booking_severity_pricing_platform_fee_chk
+  constraint severity_pricing_platform_fee_chk
     check (platform_fee >= 0)
-);
-
-create table if not exists public.booking_checkout_sessions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  address_id uuid references public.addresses(id) on delete set null,
-  service_id uuid not null references public.services(id) on delete restrict,
-  service_problem_id uuid references public.service_problems(id) on delete set null,
-  custom_problem text,
-  severity text not null,
-  scheduled_date date,
-  scheduled_slot_label text,
-  protection_selected boolean not null default false,
-  visit_charge numeric(10, 2) not null default 0,
-  platform_fee numeric(10, 2) not null default 0,
-  protection_fee numeric(10, 2) not null default 0,
-  initial_amount numeric(10, 2) not null default 0,
-  status text not null default 'created',
-  created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now()),
-  constraint booking_checkout_sessions_problem_required_chk
-    check (
-      service_problem_id is not null
-      or nullif(btrim(custom_problem), '') is not null
-    ),
-  constraint booking_checkout_sessions_severity_chk
-    check (severity in ('minor', 'moderate', 'urgent')),
-  constraint booking_checkout_sessions_status_chk
-    check (status in ('created', 'order_created', 'paid', 'failed', 'cancelled', 'expired')),
-  constraint booking_checkout_sessions_minor_schedule_chk
-    check (
-      severity <> 'minor'
-      or (
-        scheduled_date is not null
-        and nullif(btrim(coalesce(scheduled_slot_label, '')), '') is not null
-      )
-    )
 );
 
 create table if not exists public.bookings (
@@ -186,6 +149,7 @@ create table if not exists public.bookings (
   scheduled_slot_label text,
   address_label_snapshot text,
   address_snapshot text,
+  pincode text,
   customer_name_snapshot text,
   customer_phone_snapshot text,
   service_name_snapshot text not null,
@@ -207,14 +171,8 @@ create table if not exists public.bookings (
   proposed_invoice_total numeric(10, 2) not null default 0,
   estimate_note text,
   estimate_response_note text,
-  work_started_at timestamptz,
-  work_completed_at timestamptz,
   payment_requested_at timestamptz,
   payment_completed_at timestamptz,
-  final_visit_charge numeric(10, 2) not null default 0,
-  final_labour_charge numeric(10, 2) not null default 0,
-  final_parts_charge numeric(10, 2) not null default 0,
-  final_invoice_total numeric(10, 2) not null default 0,
   payment_gateway text,
   gateway_order_id text,
   gateway_payment_id text,
@@ -267,6 +225,11 @@ create table if not exists public.bookings (
     check (
       cancelled_by is null
       or cancelled_by in ('customer', 'technician', 'platform')
+    ),
+  constraint bookings_pincode_not_blank_chk
+    check (
+      pincode is null
+      or btrim(pincode) <> ''
     ),
   constraint bookings_minor_schedule_chk
     check (
@@ -323,7 +286,7 @@ create table if not exists public.booking_status_history (
     )
 );
 
-create table if not exists public.booking_verification_otps (
+create table if not exists public.verification_otps (
   id uuid primary key default gen_random_uuid(),
   booking_id uuid not null references public.bookings(id) on delete cascade,
   purpose text not null default 'arrival_verification',
@@ -338,13 +301,13 @@ create table if not exists public.booking_verification_otps (
   verified_at timestamptz,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
-  constraint booking_verification_otps_purpose_chk
+  constraint verification_otps_purpose_chk
     check (purpose in ('arrival_verification', 'completion_verification')),
-  constraint booking_verification_otps_status_chk
+  constraint verification_otps_status_chk
     check (status in ('generated', 'verified', 'expired', 'cancelled')),
-  constraint booking_verification_otps_code_format_chk
+  constraint verification_otps_code_format_chk
     check (otp_code ~ '^[0-9]{4,6}$'),
-  constraint booking_verification_otps_attempt_count_chk
+  constraint verification_otps_attempt_count_chk
     check (attempt_count >= 0)
 );
 
@@ -362,11 +325,8 @@ create index if not exists services_sort_order_idx
 create index if not exists service_problems_service_id_idx
   on public.service_problems(service_id);
 
-create index if not exists booking_severity_pricing_sort_order_idx
-  on public.booking_severity_pricing(sort_order);
-
-create index if not exists booking_checkout_sessions_user_id_created_at_idx
-  on public.booking_checkout_sessions(user_id, created_at desc);
+create index if not exists severity_pricing_sort_order_idx
+  on public.severity_pricing(sort_order);
 
 create index if not exists bookings_user_id_created_at_idx
   on public.bookings(user_id, created_at desc);
@@ -386,11 +346,11 @@ create index if not exists bookings_status_idx
 create index if not exists booking_status_history_booking_id_created_at_idx
   on public.booking_status_history(booking_id, created_at desc);
 
-create index if not exists booking_verification_otps_booking_id_created_at_idx
-  on public.booking_verification_otps(booking_id, created_at desc);
+create index if not exists verification_otps_booking_id_created_at_idx
+  on public.verification_otps(booking_id, created_at desc);
 
-create index if not exists booking_verification_otps_status_expires_at_idx
-  on public.booking_verification_otps(status, expires_at desc);
+create index if not exists verification_otps_status_expires_at_idx
+  on public.verification_otps(status, expires_at desc);
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -500,7 +460,7 @@ as $$
 declare
   selected_service public.services%rowtype;
   selected_problem public.service_problems%rowtype;
-  selected_booking_pricing public.booking_severity_pricing%rowtype;
+  selected_booking_pricing public.severity_pricing%rowtype;
   selected_address public.addresses%rowtype;
   selected_profile public.profiles%rowtype;
 begin
@@ -517,7 +477,7 @@ begin
   new.service_name_snapshot = selected_service.name;
   select *
   into selected_booking_pricing
-  from public.booking_severity_pricing
+  from public.severity_pricing
   where severity = new.severity;
 
   if not found then
@@ -578,9 +538,11 @@ begin
 
     new.address_label_snapshot = selected_address.label;
     new.address_snapshot = selected_address.display_address;
+    new.pincode = nullif(btrim(coalesce(selected_address.postal_code, '')), '');
   else
     new.address_label_snapshot = null;
     new.address_snapshot = null;
+    new.pincode = null;
   end if;
 
   if new.severity = 'moderate'
@@ -701,15 +663,9 @@ create trigger service_problems_set_updated_at
   for each row
   execute procedure public.set_updated_at();
 
-drop trigger if exists booking_severity_pricing_set_updated_at on public.booking_severity_pricing;
-create trigger booking_severity_pricing_set_updated_at
-  before update on public.booking_severity_pricing
-  for each row
-  execute procedure public.set_updated_at();
-
-drop trigger if exists booking_checkout_sessions_set_updated_at on public.booking_checkout_sessions;
-create trigger booking_checkout_sessions_set_updated_at
-  before update on public.booking_checkout_sessions
+drop trigger if exists severity_pricing_set_updated_at on public.severity_pricing;
+create trigger severity_pricing_set_updated_at
+  before update on public.severity_pricing
   for each row
   execute procedure public.set_updated_at();
 
@@ -719,9 +675,9 @@ create trigger bookings_set_updated_at
   for each row
   execute procedure public.set_updated_at();
 
-drop trigger if exists booking_verification_otps_set_updated_at on public.booking_verification_otps;
-create trigger booking_verification_otps_set_updated_at
-  before update on public.booking_verification_otps
+drop trigger if exists verification_otps_set_updated_at on public.verification_otps;
+create trigger verification_otps_set_updated_at
+  before update on public.verification_otps
   for each row
   execute procedure public.set_updated_at();
 
@@ -753,31 +709,28 @@ alter table public.profiles enable row level security;
 alter table public.addresses enable row level security;
 alter table public.services enable row level security;
 alter table public.service_problems enable row level security;
-alter table public.booking_severity_pricing enable row level security;
-alter table public.booking_checkout_sessions enable row level security;
+alter table public.severity_pricing enable row level security;
 alter table public.bookings enable row level security;
 alter table public.booking_status_history enable row level security;
-alter table public.booking_verification_otps enable row level security;
+alter table public.verification_otps enable row level security;
 
 revoke all on table public.profiles from anon, authenticated;
 revoke all on table public.addresses from anon, authenticated;
 revoke all on table public.services from anon, authenticated;
 revoke all on table public.service_problems from anon, authenticated;
-revoke all on table public.booking_severity_pricing from anon, authenticated;
-revoke all on table public.booking_checkout_sessions from anon, authenticated;
+revoke all on table public.severity_pricing from anon, authenticated;
 revoke all on table public.bookings from anon, authenticated;
 revoke all on table public.booking_status_history from anon, authenticated;
-revoke all on table public.booking_verification_otps from anon, authenticated;
+revoke all on table public.verification_otps from anon, authenticated;
 
 grant select, insert, update on table public.profiles to authenticated;
 grant select, insert, update, delete on table public.addresses to authenticated;
 grant select on table public.services to authenticated;
 grant select on table public.service_problems to authenticated;
-grant select on table public.booking_severity_pricing to authenticated;
-grant select on table public.booking_checkout_sessions to authenticated;
+grant select on table public.severity_pricing to authenticated;
 grant select, update on table public.bookings to authenticated;
 grant select on table public.booking_status_history to authenticated;
-grant select on table public.booking_verification_otps to authenticated;
+grant select on table public.verification_otps to authenticated;
 
 drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
@@ -844,19 +797,12 @@ for select
 to authenticated
 using (is_active = true);
 
-drop policy if exists "booking_severity_pricing_select_authenticated" on public.booking_severity_pricing;
-create policy "booking_severity_pricing_select_authenticated"
-on public.booking_severity_pricing
+drop policy if exists "severity_pricing_select_authenticated" on public.severity_pricing;
+create policy "severity_pricing_select_authenticated"
+on public.severity_pricing
 for select
 to authenticated
 using (true);
-
-drop policy if exists "booking_checkout_sessions_select_own" on public.booking_checkout_sessions;
-create policy "booking_checkout_sessions_select_own"
-on public.booking_checkout_sessions
-for select
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
 
 drop policy if exists "bookings_select_own" on public.bookings;
 create policy "bookings_select_own"
@@ -876,7 +822,7 @@ using (
     technician_id = (select auth.uid())
     or exists (
       select 1
-      from public.booking_assignments ba
+      from public.job_assignment ba
       where ba.booking_id = bookings.id
         and ba.technician_id = (select auth.uid())
         and ba.status in ('notified', 'accepted', 'completed')
@@ -922,16 +868,16 @@ using (
   )
 );
 
-drop policy if exists "booking_verification_otps_select_owner" on public.booking_verification_otps;
-create policy "booking_verification_otps_select_owner"
-on public.booking_verification_otps
+drop policy if exists "verification_otps_select_owner" on public.verification_otps;
+create policy "verification_otps_select_owner"
+on public.verification_otps
 for select
 to authenticated
 using (
   exists (
     select 1
     from public.bookings b
-    where b.id = booking_verification_otps.booking_id
+    where b.id = verification_otps.booking_id
       and b.user_id = (select auth.uid())
   )
 );
@@ -1040,7 +986,7 @@ set
   sort_order = excluded.sort_order,
   updated_at = timezone('utc', now());
 
-insert into public.booking_severity_pricing (
+insert into public.severity_pricing (
   severity,
   visit_charge,
   platform_fee,
@@ -1056,3 +1002,4 @@ set
   platform_fee = excluded.platform_fee,
   sort_order = excluded.sort_order,
   updated_at = timezone('utc', now());
+

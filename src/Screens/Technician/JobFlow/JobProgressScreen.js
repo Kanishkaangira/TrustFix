@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -11,9 +11,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import ScreenWrapper from '../../../Components/ScreenWrapper';
+import { supabase } from '../../../lib/supabase';
 import { fetchTechnicianJobDetail } from '../../../technician/jobAssignmentEngine';
 import {
   generateTechnicianCompletionOtp,
@@ -50,6 +52,53 @@ const formatProblem = (booking = {}) => (
 );
 
 const sanitizeMoneyInput = (value) => String(value || '').replace(/[^0-9.]/g, '');
+
+const LIVE_REFRESH_STATUSES = new Set([
+  'otp_verified',
+  'estimate_sent',
+  'estimate_revision_requested',
+  'estimate_approved',
+  'in_progress',
+  'payment_requested',
+  'payment_pending',
+  'work_completed',
+]);
+
+const mergeJobBookingSnapshot = (currentRecord, nextBooking) => {
+  const normalizedBooking = nextBooking && typeof nextBooking === 'object'
+    ? nextBooking
+    : null;
+
+  if (!normalizedBooking) {
+    return currentRecord;
+  }
+
+  if (!currentRecord) {
+    return {
+      id: `accepted-${normalizedBooking.id || 'booking'}`,
+      booking_id: normalizedBooking.id || '',
+      technician_id: normalizedBooking.technician_id || '',
+      status: normalizedBooking.technician_id ? 'accepted' : 'notified',
+      offered_at: normalizedBooking.created_at || null,
+      responded_at: null,
+      accepted_at: null,
+      created_at: normalizedBooking.created_at || null,
+      updated_at: normalizedBooking.updated_at || normalizedBooking.created_at || null,
+      bookings: normalizedBooking,
+    };
+  }
+
+  return {
+    ...currentRecord,
+    booking_id: currentRecord.booking_id || normalizedBooking.id || '',
+    technician_id: currentRecord.technician_id || normalizedBooking.technician_id || '',
+    updated_at: normalizedBooking.updated_at || currentRecord.updated_at || null,
+    bookings: {
+      ...(currentRecord.bookings || {}),
+      ...normalizedBooking,
+    },
+  };
+};
 
 const getEstimateStateMeta = (booking = {}, colors) => {
   const status = String(booking.status || '').trim();
@@ -108,64 +157,150 @@ export default function JobProgressScreen({ navigation, route }) {
   const [isSendingEstimate, setIsSendingEstimate] = useState(false);
   const [isPreparingCompletionOtp, setIsPreparingCompletionOtp] = useState(false);
   const [estimateSentModalVisible, setEstimateSentModalVisible] = useState(false);
+  const isMountedRef = useRef(true);
+  const hasLoadedJobRef = useRef(false);
+  const bookingChannelRef = useRef(null);
+  const booking = jobRecord?.bookings || {};
+  const bookingStatus = String(booking.status || '').trim();
+  const isLiveRefreshStage = LIVE_REFRESH_STATUSES.has(bookingStatus);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadJob = async () => {
+  const loadJob = useCallback(async ({ showLoader = false, silent = false } = {}) => {
+    if (showLoader) {
       setIsLoading(true);
+    }
+
+    if (!silent) {
       setErrorMessage('');
+    }
 
-      const result = await fetchTechnicianJobDetail(bookingId);
+    const result = await fetchTechnicianJobDetail(bookingId);
 
-      if (!isMounted) {
-        return;
-      }
+    if (!isMountedRef.current) {
+      return;
+    }
 
-      if (result.error) {
+    if (result.error) {
+      if (!silent) {
+        hasLoadedJobRef.current = false;
         setJobRecord(null);
         setErrorMessage(result.error.message || 'Could not load this booking right now.');
-      } else {
-        setJobRecord(result.data);
       }
 
+      if (showLoader) {
+        setIsLoading(false);
+      }
+
+      return;
+    }
+
+    hasLoadedJobRef.current = true;
+    setJobRecord(result.data);
+    setErrorMessage('');
+
+    if (showLoader) {
       setIsLoading(false);
-    };
-
-    loadJob();
-
-    return () => {
-      isMounted = false;
-    };
+    }
   }, [bookingId]);
 
-  const booking = jobRecord?.bookings || {};
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadJob({
+        showLoader: !hasLoadedJobRef.current,
+        silent: hasLoadedJobRef.current,
+      });
+    }, [loadJob]),
+  );
+
+  useEffect(() => {
+    if (!bookingId || !isLiveRefreshStage) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      loadJob({ silent: true });
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [bookingId, isLiveRefreshStage, loadJob]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const subscribeToBooking = async () => {
+      const existingChannel = bookingChannelRef.current;
+
+      if (existingChannel) {
+        await supabase.removeChannel(existingChannel);
+      }
+
+      const channel = supabase
+        .channel(`technician-job-progress:${bookingId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'bookings',
+            filter: `id=eq.${bookingId}`,
+          },
+          (payload) => {
+            if (!isMountedRef.current || !isActive) {
+              return;
+            }
+
+            hasLoadedJobRef.current = true;
+            setErrorMessage('');
+            setJobRecord((currentRecord) => mergeJobBookingSnapshot(currentRecord, payload.new));
+          },
+        );
+
+      bookingChannelRef.current = channel;
+      channel.subscribe();
+    };
+
+    if (bookingId) {
+      subscribeToBooking();
+    }
+
+    return () => {
+      isActive = false;
+
+      const existingChannel = bookingChannelRef.current;
+      bookingChannelRef.current = null;
+
+      if (existingChannel) {
+        supabase.removeChannel(existingChannel);
+      }
+    };
+  }, [bookingId]);
 
   useEffect(() => {
     setLabourCharge(
       String(
         booking.proposed_labour_charge > 0
           ? booking.proposed_labour_charge
-          : booking.final_labour_charge > 0
-            ? booking.final_labour_charge
-            : '',
+          : '',
       ),
     );
     setPartsCharge(
       String(
         booking.proposed_parts_charge > 0
           ? booking.proposed_parts_charge
-          : booking.final_parts_charge > 0
-            ? booking.final_parts_charge
-            : '',
+          : '',
       ),
     );
   }, [
     booking.id,
     booking.proposed_labour_charge,
     booking.proposed_parts_charge,
-    booking.final_labour_charge,
-    booking.final_parts_charge,
   ]);
 
   const serviceName = String(booking.service_name_snapshot || 'Service request').trim();
@@ -181,8 +316,9 @@ export default function JobProgressScreen({ navigation, route }) {
     + Number(booking.urgency_surcharge || 0)
     + parsedLabour
     + parsedParts;
-  const approvedTotal = Number(booking.final_invoice_total || 0);
-  const bookingStatus = String(booking.status || '').trim();
+  const approvedLabourCharge = Number(booking.proposed_labour_charge || 0);
+  const approvedPartsCharge = Number(booking.proposed_parts_charge || 0);
+  const approvedTotal = Number(booking.proposed_invoice_total || 0);
   const isEstimateApproved = [
     'estimate_approved',
     'in_progress',
@@ -401,12 +537,12 @@ export default function JobProgressScreen({ navigation, route }) {
                   <View style={styles.divider} />
                   <TechRow
                     label="Labour"
-                    value={formatCurrency(isEstimateApproved ? booking.final_labour_charge : parsedLabour)}
+                    value={formatCurrency(isEstimateApproved ? approvedLabourCharge : parsedLabour)}
                   />
                   <View style={styles.divider} />
                   <TechRow
                     label="Parts"
-                    value={formatCurrency(isEstimateApproved ? booking.final_parts_charge : parsedParts)}
+                    value={formatCurrency(isEstimateApproved ? approvedPartsCharge : parsedParts)}
                   />
                   <View style={styles.totalDivider} />
                   <TechRow

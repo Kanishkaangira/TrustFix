@@ -24,7 +24,6 @@ const ASSIGNMENT_BOOKING_SUMMARY_COLUMNS = `
   visit_charge,
   platform_fee,
   estimated_total,
-  work_completed_at,
   created_at,
   updated_at,
   technician_id
@@ -100,7 +99,7 @@ Deno.serve(async (req) => {
   }
 
   const { data: assignmentRows, error: assignmentsError } = await adminClient
-    .from('booking_assignments')
+    .from('job_assignment')
     .select(`
       id,
       booking_id,
@@ -174,3 +173,4 @@ Deno.serve(async (req) => {
     technicianProfile,
   });
 });
+

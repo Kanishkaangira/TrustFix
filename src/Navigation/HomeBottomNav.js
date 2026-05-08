@@ -1,20 +1,30 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getDistance } from 'geolib';
+import Geolocation from 'react-native-geolocation-service';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
+import TrackingPopup from '../Components/TrackingPopup';
+import { supabase } from '../lib/supabase';
 import Home from '../Screens/Customer/Home';
 import Profile from '../Screens/Customer/Profile';
 import Booking from '../Screens/Customer/Booking';
 import ServiceLedger from '../Screens/Customer/ServiceLedger';
+import {
+  getBookings,
+  subscribeToBookings,
+  syncBookingsFromRemote,
+} from '../state/bookingStore';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { getThemeColors } from '../theme';
 
@@ -48,6 +58,123 @@ const TABS = [
 ];
 
 const TAB_BAR_BASE_HEIGHT = Platform.OS === 'ios' ? 60 : 54;
+const TRACKABLE_BOOKING_STATUSES = new Set([
+  'requested',
+  'confirmed',
+  'assigned',
+  'accepted',
+  'en_route',
+  'arrived',
+  'otp_verified',
+  'estimate_sent',
+  'estimate_revision_requested',
+  'estimate_approved',
+  'in_progress',
+  'work_completed',
+  'payment_pending',
+  'payment_requested',
+]);
+const TRACKING_STATUS_GROUPS = [
+  ['en_route', 'accepted', 'assigned', 'arrived'],
+  ['otp_verified', 'estimate_sent', 'estimate_revision_requested', 'estimate_approved', 'in_progress', 'work_completed', 'payment_pending', 'payment_requested'],
+  ['confirmed', 'requested'],
+];
+const TRACKING_POPUP_VISIBLE_STATUSES = new Set(['en_route', 'accepted', 'assigned']);
+const TRACKING_POPUP_CLOSE_STATUSES = new Set(['arrived']);
+
+const ROOT_STYLES = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+});
+
+const safeDate = value => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const sortBookingsByRecent = bookings => [...bookings].sort((a, b) => {
+  const aDate = safeDate(a?.scheduledDate) || safeDate(a?.createdAt);
+  const bDate = safeDate(b?.scheduledDate) || safeDate(b?.createdAt);
+
+  return (bDate?.getTime() || 0) - (aDate?.getTime() || 0);
+});
+
+const normalizeStatus = value => String(value || '').trim().toLowerCase();
+
+const parseTrackingCoordinates = record => {
+  const latitude = Number(record?.current_lat);
+  const longitude = Number(record?.current_lng);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+};
+
+const formatTrackingDistance = distanceInMeters => {
+  if (!Number.isFinite(distanceInMeters)) {
+    return null;
+  }
+
+  if (distanceInMeters < 1000) {
+    return `${Math.round(distanceInMeters)}m away`;
+  }
+
+  return `${(distanceInMeters / 1000).toFixed(distanceInMeters >= 10000 ? 0 : 1)} km away`;
+};
+
+const buildTrackingCoordinateSignature = coords => (
+  `${coords.latitude.toFixed(3)},${coords.longitude.toFixed(3)}`
+);
+
+const formatTrackingLocationFallback = coords => (
+  `Technician live at ${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`
+);
+
+const requestLocationPermission = async () => {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  try {
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Location access needed',
+        message: 'TrustFix uses your location to show how far the technician is from you.',
+        buttonPositive: 'Allow',
+        buttonNegative: 'Not now',
+      },
+    );
+
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch (_) {
+    return false;
+  }
+};
+
+const getCurrentCoordinates = () => new Promise((resolve, reject) => {
+  Geolocation.getCurrentPosition(
+    position => resolve({
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    }),
+    reject,
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 10000,
+      forceRequestLocation: true,
+      showLocationDialog: true,
+    },
+  );
+});
 
 const getTabColors = isDark => {
   const theme = getThemeColors(isDark);
@@ -187,20 +314,366 @@ const CustomTabBar = ({ state, navigation }) => {
 
 const renderTabBar = props => <CustomTabBar {...props} />;
 
-const HomeBottomNav = () => (
-  <Tab.Navigator
-    tabBar={renderTabBar}
-    screenOptions={{
-      headerShown: false,
-      tabBarHideOnKeyboard: true,
-    }}
-  >
-    <Tab.Screen name="Home" component={Home} />
-    <Tab.Screen name="Booking" component={Booking} />
-    <Tab.Screen name="History" component={ServiceLedger} />
-    <Tab.Screen name="Profile" component={Profile} />
-  </Tab.Navigator>
-);
+const HomeBottomNav = () => {
+  const [bookings, setBookings] = useState(() => getBookings());
+  const [activeTabName, setActiveTabName] = useState('Home');
+  const [showTrackingPopup, setShowTrackingPopup] = useState(false);
+  const [trackingDistance, setTrackingDistance] = useState(null);
+  const [trackingLocationLabel, setTrackingLocationLabel] = useState(null);
+  const trackingChannelRef = useRef(null);
+  const trackingStatusChannelRef = useRef(null);
+  const customerCoordsRef = useRef(null);
+  const hasRequestedCustomerLocationRef = useRef(false);
+  const trackingLocationCacheRef = useRef({ signature: '', label: null });
+  const trackingLocationRequestRef = useRef(0);
+  const activeBooking = useMemo(() => {
+    const sortedBookings = sortBookingsByRecent(bookings).filter(booking => (
+      TRACKABLE_BOOKING_STATUSES.has(String(booking?.status || '').trim())
+    ));
+
+    for (const group of TRACKING_STATUS_GROUPS) {
+      const matchingBooking = sortedBookings.find(booking => (
+        group.includes(String(booking?.status || '').trim())
+      ));
+
+      if (matchingBooking) {
+        return matchingBooking;
+      }
+    }
+
+    return sortedBookings[0] || null;
+  }, [bookings]);
+  const activeBookingStatus = normalizeStatus(activeBooking?.status);
+  const shouldShowTrackingPopup = TRACKING_POPUP_VISIBLE_STATUSES.has(activeBookingStatus);
+
+  useEffect(() => {
+    syncBookingsFromRemote();
+    return subscribeToBookings(setBookings);
+  }, []);
+
+  useEffect(() => {
+    customerCoordsRef.current = null;
+    hasRequestedCustomerLocationRef.current = false;
+    trackingLocationCacheRef.current = { signature: '', label: null };
+    trackingLocationRequestRef.current = 0;
+    setTrackingDistance(null);
+    setTrackingLocationLabel(null);
+
+    if (!activeBooking?.id) {
+      setShowTrackingPopup(false);
+    }
+  }, [activeBooking?.id]);
+
+  const resolveCustomerCoordinates = useCallback(async () => {
+    if (customerCoordsRef.current) {
+      return customerCoordsRef.current;
+    }
+
+    let hasPermission = false;
+
+    if (!hasRequestedCustomerLocationRef.current) {
+      hasRequestedCustomerLocationRef.current = true;
+      hasPermission = await requestLocationPermission();
+    }
+
+    if (hasPermission) {
+      try {
+        customerCoordsRef.current = await getCurrentCoordinates();
+        return customerCoordsRef.current;
+      } catch (_) {}
+    }
+
+    if (
+      Number.isFinite(activeBooking?.customerLat)
+      && Number.isFinite(activeBooking?.customerLng)
+    ) {
+      customerCoordsRef.current = {
+        latitude: activeBooking.customerLat,
+        longitude: activeBooking.customerLng,
+      };
+      return customerCoordsRef.current;
+    }
+
+    return null;
+  }, [activeBooking?.customerLat, activeBooking?.customerLng]);
+
+  const updateTrackingDistance = useCallback(async (record) => {
+    const technicianCoords = parseTrackingCoordinates(record);
+
+    if (!technicianCoords) {
+      setTrackingDistance(null);
+      return;
+    }
+
+    const customerCoords = await resolveCustomerCoordinates();
+
+    if (!customerCoords) {
+      setTrackingDistance(null);
+      return;
+    }
+
+    const distanceInMeters = getDistance(customerCoords, technicianCoords);
+    setTrackingDistance(formatTrackingDistance(distanceInMeters));
+  }, [resolveCustomerCoordinates]);
+
+  const updateTrackingLocationLabel = useCallback(async (record) => {
+    const bookingId = String(activeBooking?.id || '').trim();
+    const technicianCoords = parseTrackingCoordinates(record);
+
+    if (!bookingId || !technicianCoords) {
+      setTrackingLocationLabel(null);
+      return;
+    }
+
+    const nextSignature = buildTrackingCoordinateSignature(technicianCoords);
+    const cachedResult = trackingLocationCacheRef.current;
+
+    if (cachedResult.signature === nextSignature && cachedResult.label) {
+      setTrackingLocationLabel(cachedResult.label);
+      return;
+    }
+
+    const requestId = trackingLocationRequestRef.current + 1;
+    trackingLocationRequestRef.current = requestId;
+
+    if (!cachedResult.label) {
+      setTrackingLocationLabel('Resolving technician location...');
+    }
+
+    const reverseResult = await supabase.functions.invoke('geocode-booking-address', {
+      body: {
+        bookingId,
+        technicianLat: technicianCoords.latitude,
+        technicianLng: technicianCoords.longitude,
+      },
+    });
+
+    if (trackingLocationRequestRef.current !== requestId) {
+      return;
+    }
+
+    const nextLabel = String(
+      reverseResult?.data?.technicianLocation
+      || cachedResult.label
+      || formatTrackingLocationFallback(technicianCoords),
+    ).trim();
+
+    trackingLocationCacheRef.current = {
+      signature: nextSignature,
+      label: nextLabel,
+    };
+    setTrackingLocationLabel(nextLabel);
+  }, [activeBooking?.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const bookingId = String(activeBooking?.id || '').trim();
+
+    const clearTrackingUi = () => {
+      customerCoordsRef.current = null;
+      setShowTrackingPopup(false);
+      setTrackingDistance(null);
+      setTrackingLocationLabel(null);
+    };
+
+    if (!bookingId || !shouldShowTrackingPopup) {
+      const existingChannel = trackingChannelRef.current;
+      trackingChannelRef.current = null;
+      const existingStatusChannel = trackingStatusChannelRef.current;
+      trackingStatusChannelRef.current = null;
+
+      if (existingChannel) {
+        supabase.removeChannel(existingChannel);
+      }
+
+      if (existingStatusChannel) {
+        supabase.removeChannel(existingStatusChannel);
+      }
+
+      clearTrackingUi();
+      return undefined;
+    }
+
+    const handleTrackingUpdate = async (record) => {
+      if (!isMounted) {
+        return;
+      }
+
+      setShowTrackingPopup(true);
+      setTrackingDistance(currentValue => currentValue || 'Locating...');
+      setTrackingLocationLabel(currentValue => currentValue || 'Resolving technician location...');
+
+      updateTrackingDistance(record).catch(() => {});
+      updateTrackingLocationLabel(record).catch(() => {});
+    };
+
+    const subscribeToTracking = async () => {
+      const existingChannel = trackingChannelRef.current;
+      const existingStatusChannel = trackingStatusChannelRef.current;
+
+      if (existingChannel) {
+        await supabase.removeChannel(existingChannel);
+      }
+
+      if (existingStatusChannel) {
+        await supabase.removeChannel(existingStatusChannel);
+      }
+
+      const statusChannel = supabase
+        .channel(`booking-status-history:${bookingId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'booking_status_history',
+            filter: `booking_id=eq.${bookingId}`,
+          },
+          payload => {
+            if (!isMounted) {
+              return;
+            }
+
+            if (TRACKING_POPUP_CLOSE_STATUSES.has(normalizeStatus(payload.new?.status))) {
+              clearTrackingUi();
+            }
+          },
+        );
+
+      trackingStatusChannelRef.current = statusChannel;
+      statusChannel.subscribe();
+
+      const latestStatusResult = await supabase.db.select('booking_status_history', {
+        columns: 'status,created_at',
+        filters: [{ column: 'booking_id', op: 'eq', value: bookingId }],
+        order: [{ column: 'created_at', ascending: false }],
+        maybeSingle: true,
+      });
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (TRACKING_POPUP_CLOSE_STATUSES.has(normalizeStatus(latestStatusResult.data?.status))) {
+        clearTrackingUi();
+        return;
+      }
+
+      const channel = supabase
+        .channel(`technician-live-tracking:${bookingId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'technician_live_tracking',
+            filter: `booking_id=eq.${bookingId}`,
+          },
+          async payload => {
+            await handleTrackingUpdate(payload.new);
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'technician_live_tracking',
+            filter: `booking_id=eq.${bookingId}`,
+          },
+          async payload => {
+            await handleTrackingUpdate(payload.new);
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'technician_live_tracking',
+            filter: `booking_id=eq.${bookingId}`,
+          },
+          () => {
+            if (!isMounted) {
+              return;
+            }
+
+            clearTrackingUi();
+          },
+        );
+
+      trackingChannelRef.current = channel;
+      channel.subscribe();
+
+      const existingTrackingResult = await supabase.db.select('technician_live_tracking', {
+        filters: [{ column: 'booking_id', op: 'eq', value: bookingId }],
+        maybeSingle: true,
+      });
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (existingTrackingResult.data) {
+        await handleTrackingUpdate(existingTrackingResult.data);
+        return;
+      }
+
+      clearTrackingUi();
+    };
+
+    subscribeToTracking();
+
+    return () => {
+      isMounted = false;
+
+      const existingChannel = trackingChannelRef.current;
+      trackingChannelRef.current = null;
+      const existingStatusChannel = trackingStatusChannelRef.current;
+      trackingStatusChannelRef.current = null;
+
+      if (existingChannel) {
+        supabase.removeChannel(existingChannel);
+      }
+
+      if (existingStatusChannel) {
+        supabase.removeChannel(existingStatusChannel);
+      }
+    };
+  }, [
+    activeBooking?.id,
+    shouldShowTrackingPopup,
+    updateTrackingDistance,
+    updateTrackingLocationLabel,
+  ]);
+
+  return (
+    <View style={ROOT_STYLES.root}>
+      <Tab.Navigator
+        tabBar={renderTabBar}
+        screenListeners={({ route }) => ({
+          focus: () => setActiveTabName(route.name),
+        })}
+        screenOptions={{
+          headerShown: false,
+          tabBarHideOnKeyboard: true,
+        }}
+      >
+        <Tab.Screen name="Home" component={Home} />
+        <Tab.Screen name="Booking" component={Booking} />
+        <Tab.Screen name="History" component={ServiceLedger} />
+        <Tab.Screen name="Profile" component={Profile} />
+      </Tab.Navigator>
+
+      <TrackingPopup
+        visible={showTrackingPopup && activeTabName === 'Home'}
+        distance={trackingDistance}
+        locationLabel={trackingLocationLabel}
+        showClose={false}
+      />
+    </View>
+  );
+};
 
 export default HomeBottomNav;
 

@@ -76,6 +76,14 @@ Deno.serve(async (req) => {
       id,
       user_id,
       technician_id,
+      address_id,
+      service_id,
+      service_problem_id,
+      custom_problem,
+      severity,
+      scheduled_date,
+      scheduled_slot_label,
+      protection_selected,
       status,
       visit_charge,
       platform_fee,
@@ -139,10 +147,6 @@ Deno.serve(async (req) => {
     status: 'estimate_approved',
     estimate_approved_at: nowIso,
     estimate_response_note: customerNote || null,
-    final_labour_charge: Number(booking.proposed_labour_charge || 0),
-    final_parts_charge: Number(booking.proposed_parts_charge || 0),
-    final_invoice_total: Number(booking.proposed_invoice_total || 0),
-    final_visit_charge: Number(booking.visit_charge || 0),
   };
 
   const { data: approvedBooking, error: approveError } = await adminClient
@@ -154,9 +158,9 @@ Deno.serve(async (req) => {
       id,
       booking_number,
       status,
-      final_labour_charge,
-      final_parts_charge,
-      final_invoice_total,
+      proposed_labour_charge,
+      proposed_parts_charge,
+      proposed_invoice_total,
       estimate_approved_at,
       estimate_response_note
     `)
@@ -168,10 +172,22 @@ Deno.serve(async (req) => {
 
   if (booking.technician_id) {
     await adminClient
-      .from('booking_completion_reports')
+      .from('booking_financial_records')
       .upsert({
+        record_type: 'completion',
         booking_id: bookingId,
+        user_id: booking.user_id,
         technician_id: booking.technician_id,
+        address_id: booking.address_id,
+        service_id: booking.service_id,
+        service_problem_id: booking.service_problem_id,
+        custom_problem: booking.custom_problem,
+        severity: booking.severity,
+        scheduled_date: booking.scheduled_date,
+        scheduled_slot_label: booking.scheduled_slot_label,
+        protection_selected: Boolean(booking.protection_selected),
+        visit_charge: Number(booking.visit_charge || 0),
+        status: 'pending',
         final_labour_amount: Number(booking.proposed_labour_charge || 0),
         final_parts_amount: Number(booking.proposed_parts_charge || 0),
         final_visit_charge: Number(booking.visit_charge || 0),
@@ -179,8 +195,10 @@ Deno.serve(async (req) => {
         protection_fee_amount: Number(booking.protection_fee || 0),
         urgency_surcharge_amount: Number(booking.urgency_surcharge || 0),
         final_customer_total: Number(booking.proposed_invoice_total || 0),
+        payment_requested_at: null,
+        payment_completed_at: null,
       }, {
-        onConflict: 'booking_id',
+        onConflict: 'booking_id,record_type',
       });
   }
 

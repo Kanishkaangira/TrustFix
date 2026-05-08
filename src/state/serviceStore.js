@@ -391,7 +391,7 @@ export const syncServiceCatalog = async () => {
         { column: 'sort_order', ascending: true },
       ],
     }),
-    supabase.db.select('booking_severity_pricing', {
+    supabase.db.select('severity_pricing', {
       order: [{ column: 'sort_order', ascending: true }],
     }),
   ]);
@@ -420,3 +420,4 @@ export const syncServiceCatalog = async () => {
 };
 
 hydrateServiceCatalog();
+

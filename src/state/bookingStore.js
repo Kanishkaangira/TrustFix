@@ -18,6 +18,22 @@ const notify = () => {
 
 const formatCurrency = (value) => `\u20B9${Number(value || 0).toLocaleString('en-IN')}`;
 
+const parseCoordinate = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') {
+      continue;
+    }
+
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
 const normalizeBookingRecord = (record = {}) => ({
   id: record.id || '',
   bookingNumber: String(record.booking_number || '').trim(),
@@ -43,11 +59,25 @@ const normalizeBookingRecord = (record = {}) => ({
   estimateSentAt: record.estimate_sent_at || null,
   estimateApprovedAt: record.estimate_approved_at || null,
   estimateReworkRequestedAt: record.estimate_rework_requested_at || null,
-  finalLabourCharge: Number(record.final_labour_charge || 0),
-  finalPartsCharge: Number(record.final_parts_charge || 0),
-  finalInvoiceTotal: Number(record.final_invoice_total || 0),
+  finalLabourCharge: Number(record.proposed_labour_charge || 0),
+  finalPartsCharge: Number(record.proposed_parts_charge || 0),
+  finalInvoiceTotal: Number(record.proposed_invoice_total || 0),
   addressLabel: String(record.address_label_snapshot || '').trim(),
   address: String(record.address_snapshot || '').trim(),
+  customerLat: parseCoordinate(
+    record.customer_lat,
+    record.customer_latitude,
+    record.destination_latitude_snapshot,
+    record.destination_latitude,
+    record.latitude,
+  ),
+  customerLng: parseCoordinate(
+    record.customer_lng,
+    record.customer_longitude,
+    record.destination_longitude_snapshot,
+    record.destination_longitude,
+    record.longitude,
+  ),
   scheduledDate: record.scheduled_date || null,
   scheduledSlotLabel: String(record.scheduled_slot_label || '').trim(),
   createdAt: record.created_at || null,
