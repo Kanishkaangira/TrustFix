@@ -2,9 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  PanResponder,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,6 +41,8 @@ const formatEtaLabel = distanceLabel => {
   return `ETA ${etaMinutes} min`;
 };
 
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
 export default function TrackingPopup({
   visible,
   distance,
@@ -46,10 +50,93 @@ export default function TrackingPopup({
   showClose = false,
 }) {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const translateY = useRef(new Animated.Value(-28)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const dragOffset = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const boundsRef = useRef({
+    minX: -4,
+    maxX: 0,
+    minY: -4,
+    maxY: 0,
+  });
   const [shouldRender, setShouldRender] = useState(visible);
+  const [cardSize, setCardSize] = useState({ width: 268, height: 150 });
   const etaLabel = formatEtaLabel(distance);
+  const popupWidth = Math.min(screenWidth - 32, 268);
+  const baseTop = insets.top + 12;
+
+  useEffect(() => {
+    const minLeft = 12;
+    const maxLeft = Math.max(minLeft, screenWidth - cardSize.width - 12);
+    const minTop = insets.top + 8;
+    const maxTop = Math.max(
+      minTop,
+      screenHeight - insets.bottom - cardSize.height - 92,
+    );
+    const bounds = {
+      minX: minLeft - 16,
+      maxX: maxLeft - 16,
+      minY: minTop - baseTop,
+      maxY: maxTop - baseTop,
+    };
+
+    boundsRef.current = bounds;
+
+    const nextX = clamp(dragOffsetRef.current.x, bounds.minX, bounds.maxX);
+    const nextY = clamp(dragOffsetRef.current.y, bounds.minY, bounds.maxY);
+
+    dragOffsetRef.current = { x: nextX, y: nextY };
+    dragOffset.setValue({ x: nextX, y: nextY });
+  }, [baseTop, cardSize.height, cardSize.width, dragOffset, insets.bottom, insets.top, screenHeight, screenWidth]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => (
+        Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4
+      ),
+      onPanResponderGrant: () => {
+        dragOffset.stopAnimation((value) => {
+          dragOffsetRef.current = value;
+        });
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const bounds = boundsRef.current;
+        const nextX = clamp(
+          dragOffsetRef.current.x + gestureState.dx,
+          bounds.minX,
+          bounds.maxX,
+        );
+        const nextY = clamp(
+          dragOffsetRef.current.y + gestureState.dy,
+          bounds.minY,
+          bounds.maxY,
+        );
+
+        dragOffset.setValue({ x: nextX, y: nextY });
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const bounds = boundsRef.current;
+        dragOffsetRef.current = {
+          x: clamp(
+            dragOffsetRef.current.x + gestureState.dx,
+            bounds.minX,
+            bounds.maxX,
+          ),
+          y: clamp(
+            dragOffsetRef.current.y + gestureState.dy,
+            bounds.minY,
+            bounds.maxY,
+          ),
+        };
+        dragOffset.setValue(dragOffsetRef.current);
+      },
+      onPanResponderTerminate: () => {
+        dragOffset.setValue(dragOffsetRef.current);
+      },
+    }),
+  ).current;
 
   useEffect(() => {
     if (visible) {
@@ -101,16 +188,32 @@ export default function TrackingPopup({
   return (
     <Animated.View
       pointerEvents={visible ? 'auto' : 'none'}
+      {...panResponder.panHandlers}
+      onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        setCardSize((current) => (
+          current.width === width && current.height === height
+            ? current
+            : { width, height }
+        ));
+      }}
       style={[
         styles.container,
-        { top: insets.top + 12 },
+        {
+          top: baseTop,
+          width: popupWidth,
+        },
         {
           opacity,
-          transform: [{ translateY }],
+          transform: [
+            { translateX: dragOffset.x },
+            { translateY: Animated.add(translateY, dragOffset.y) },
+          ],
         },
       ]}
     >
       <View style={styles.glowAccent} />
+      <View style={styles.dragHandle} />
 
       <View style={styles.headerRow}>
         <View style={styles.iconShell}>
@@ -192,11 +295,10 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     left: 16,
-    right: 16,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 10,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
     backgroundColor: '#FFFDF9',
     borderWidth: 1,
     borderColor: '#F3E5D8',
@@ -207,6 +309,14 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     zIndex: 40,
     overflow: 'hidden',
+  },
+  dragHandle: {
+    alignSelf: 'center',
+    width: 30,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#E2E8F0',
+    marginBottom: 8,
   },
   glowAccent: {
     position: 'absolute',
@@ -222,9 +332,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   iconShell: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
@@ -233,34 +343,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 4,
-    marginRight: 10,
+    marginRight: 8,
   },
   iconChip: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E9FBF2',
   },
   copyWrap: {
     flex: 1,
-    paddingRight: 10,
+    paddingRight: 8,
   },
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   label: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.2,
     color: '#64748B',
   },
   livePill: {
-    marginLeft: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    marginLeft: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
@@ -276,14 +386,14 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   livePillText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
     color: '#047857',
     letterSpacing: 0.5,
   },
   distance: {
     marginTop: 1,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     color: '#0F766E',
   },
@@ -296,31 +406,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   statusRow: {
-    marginTop: 10,
-    marginBottom: 10,
+    marginTop: 8,
+    marginBottom: 8,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   statusChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 999,
     backgroundColor: '#F1FDF7',
     borderWidth: 1,
     borderColor: '#D7F7E8',
   },
   statusChipText: {
-    marginLeft: 5,
-    fontSize: 10,
+    marginLeft: 4,
+    fontSize: 9,
     fontWeight: '800',
     color: '#0F766E',
   },
   routePreview: {
-    height: 74,
-    borderRadius: 16,
+    height: 64,
+    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#F7FFFB',
     borderWidth: 1,
@@ -348,7 +458,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 34,
+    top: 29,
     height: 1,
     backgroundColor: '#DCEFE6',
   },
@@ -370,41 +480,41 @@ const styles = StyleSheet.create({
   },
   routeLineBase: {
     position: 'absolute',
-    left: 24,
-    right: 24,
-    top: 35,
-    height: 7,
+    left: 18,
+    right: 18,
+    top: 30,
+    height: 6,
     borderRadius: 999,
     backgroundColor: '#D8F8EA',
   },
   routeLineActive: {
     position: 'absolute',
-    left: 24,
+    left: 18,
     width: '56%',
-    top: 38,
-    borderWidth: 1.8,
+    top: 33,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: '#10B981',
   },
   technicianMarker: {
     position: 'absolute',
     left: '24%',
-    top: 18,
+    top: 14,
     alignItems: 'center',
   },
   customerMarker: {
     position: 'absolute',
     right: '27%',
-    top: 18,
+    top: 14,
     alignItems: 'center',
   },
   markerOuter: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
+    borderWidth: 2.5,
     borderColor: '#059669',
     backgroundColor: '#FFFFFF',
   },
@@ -412,9 +522,9 @@ const styles = StyleSheet.create({
     borderColor: '#F87171',
   },
   markerInner: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: '#059669',
   },
   customerMarkerInner: {
@@ -422,36 +532,36 @@ const styles = StyleSheet.create({
   },
   technicianTag: {
     marginTop: -5,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     borderRadius: 999,
     backgroundColor: '#059669',
   },
   customerTag: {
     marginTop: -5,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     borderRadius: 999,
     backgroundColor: '#F87171',
   },
   markerTagText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   etaChip: {
     position: 'absolute',
-    right: 10,
-    bottom: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    right: 8,
+    bottom: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 999,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#D8F8EA',
   },
   etaText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     color: '#0F766E',
   },

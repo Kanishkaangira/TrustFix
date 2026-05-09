@@ -137,6 +137,10 @@ const formatTrackingLocationFallback = coords => (
   `Technician live at ${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`
 );
 
+const toBookingIdList = bookings => bookings
+  .map(booking => String(booking?.id || '').trim())
+  .filter(Boolean);
+
 const requestLocationPermission = async () => {
   if (Platform.OS !== 'android') {
     return true;
@@ -320,8 +324,12 @@ const HomeBottomNav = () => {
   const [showTrackingPopup, setShowTrackingPopup] = useState(false);
   const [trackingDistance, setTrackingDistance] = useState(null);
   const [trackingLocationLabel, setTrackingLocationLabel] = useState(null);
+  const [trackingBookingId, setTrackingBookingId] = useState(null);
+  const trackingDiscoveryChannelRef = useRef(null);
   const trackingChannelRef = useRef(null);
   const trackingStatusChannelRef = useRef(null);
+  const trackingBookingIdRef = useRef(null);
+  const trackingArrivedRef = useRef(false);
   const customerCoordsRef = useRef(null);
   const hasRequestedCustomerLocationRef = useRef(false);
   const trackingLocationCacheRef = useRef({ signature: '', label: null });
@@ -343,8 +351,18 @@ const HomeBottomNav = () => {
 
     return sortedBookings[0] || null;
   }, [bookings]);
-  const activeBookingStatus = normalizeStatus(activeBooking?.status);
-  const shouldShowTrackingPopup = TRACKING_POPUP_VISIBLE_STATUSES.has(activeBookingStatus);
+  const trackedBooking = useMemo(() => (
+    bookings.find(booking => String(booking?.id || '').trim() === trackingBookingId) || null
+  ), [bookings, trackingBookingId]);
+  const selectedTrackingBooking = trackedBooking || activeBooking;
+  const selectedTrackingBookingStatus = normalizeStatus(selectedTrackingBooking?.status);
+  const shouldShowTrackingPopup = (
+    !!trackingBookingId || TRACKING_POPUP_VISIBLE_STATUSES.has(selectedTrackingBookingStatus)
+  );
+
+  useEffect(() => {
+    trackingBookingIdRef.current = trackingBookingId;
+  }, [trackingBookingId]);
 
   useEffect(() => {
     syncBookingsFromRemote();
@@ -352,17 +370,225 @@ const HomeBottomNav = () => {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+    const candidateBookings = sortBookingsByRecent(bookings).filter(booking => (
+      TRACKABLE_BOOKING_STATUSES.has(normalizeStatus(booking?.status))
+    ));
+    const bookingIds = toBookingIdList(candidateBookings);
+    const bookingIdSet = new Set(bookingIds);
+    let discoveryInterval = null;
+
+    const clearTrackingPopupState = () => {
+      setShowTrackingPopup(false);
+      setTrackingDistance(null);
+      setTrackingLocationLabel(null);
+    };
+
+    const activateTrackingPopup = (bookingId) => {
+      if (!bookingId) {
+        return;
+      }
+
+      const isSameBooking = trackingBookingIdRef.current === bookingId;
+      trackingArrivedRef.current = false;
+      setTrackingBookingId(currentValue => (
+        currentValue === bookingId ? currentValue : bookingId
+      ));
+      setShowTrackingPopup(true);
+
+      if (!isSameBooking) {
+        setTrackingDistance('Locating...');
+        setTrackingLocationLabel('Resolving technician location...');
+      }
+    };
+
+    const deactivateTrackingPopup = (bookingId) => {
+      if (bookingId && trackingBookingIdRef.current !== bookingId) {
+        return;
+      }
+
+      setTrackingBookingId(currentValue => (
+        bookingId && currentValue !== bookingId ? currentValue : null
+      ));
+      clearTrackingPopupState();
+    };
+
+    const resolveLatestTrackingStatus = async (bookingId) => {
+      const latestStatusResult = await supabase.db.select('booking_status_history', {
+        columns: 'status,created_at',
+        filters: [{ column: 'booking_id', op: 'eq', value: bookingId }],
+        order: [{ column: 'created_at', ascending: false }],
+        maybeSingle: true,
+      });
+
+      if (!isMounted) {
+        return null;
+      }
+
+      return normalizeStatus(latestStatusResult.data?.status);
+    };
+
+    const resolveTrackingBooking = async () => {
+      if (!bookingIds.length) {
+        if (isMounted) {
+          setTrackingBookingId(null);
+        }
+        return;
+      }
+
+      const trackingRowsResult = await supabase.db.select('technician_live_tracking', {
+        columns: 'booking_id,updated_at',
+        filters: [{ column: 'booking_id', op: 'in', value: bookingIds }],
+        order: [{ column: 'updated_at', ascending: false }],
+      });
+
+      if (!isMounted || trackingRowsResult.error) {
+        return;
+      }
+
+      const trackingRows = Array.isArray(trackingRowsResult.data)
+        ? trackingRowsResult.data
+        : [];
+
+      if (!trackingRows.length) {
+        setTrackingBookingId(null);
+        return;
+      }
+
+      for (const trackingRow of trackingRows) {
+        const bookingId = String(trackingRow?.booking_id || '').trim();
+
+        if (!bookingId) {
+          continue;
+        }
+
+        const latestStatus = await resolveLatestTrackingStatus(bookingId);
+
+        if (TRACKING_POPUP_CLOSE_STATUSES.has(latestStatus)) {
+          continue;
+        }
+
+        if (TRACKING_POPUP_VISIBLE_STATUSES.has(latestStatus)) {
+          activateTrackingPopup(bookingId);
+          return;
+        }
+      }
+
+      setTrackingBookingId(null);
+    };
+
+    const handleDiscoveryTrackingChange = async (record, eventType) => {
+      const bookingId = String(record?.booking_id || '').trim();
+
+      if (!bookingId || !bookingIdSet.has(bookingId)) {
+        return;
+      }
+
+      if (eventType === 'DELETE') {
+        deactivateTrackingPopup(bookingId);
+        return;
+      }
+
+      activateTrackingPopup(bookingId);
+
+      const latestStatus = await resolveLatestTrackingStatus(bookingId);
+
+      if (!latestStatus) {
+        return;
+      }
+
+      if (TRACKING_POPUP_CLOSE_STATUSES.has(latestStatus)) {
+        trackingArrivedRef.current = true;
+        deactivateTrackingPopup(bookingId);
+        return;
+      }
+
+      if (TRACKING_POPUP_VISIBLE_STATUSES.has(latestStatus)) {
+        activateTrackingPopup(bookingId);
+      }
+    };
+
+    const existingDiscoveryChannel = trackingDiscoveryChannelRef.current;
+    trackingDiscoveryChannelRef.current = null;
+
+    if (existingDiscoveryChannel) {
+      supabase.removeChannel(existingDiscoveryChannel);
+    }
+
+    if (bookingIds.length) {
+      const discoveryChannel = supabase
+        .channel('technician-live-tracking-discovery')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'technician_live_tracking',
+          },
+          payload => {
+            handleDiscoveryTrackingChange(payload.new, 'INSERT').catch(() => {});
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'technician_live_tracking',
+          },
+          payload => {
+            handleDiscoveryTrackingChange(payload.new, 'UPDATE').catch(() => {});
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'technician_live_tracking',
+          },
+          payload => {
+            handleDiscoveryTrackingChange(payload.old, 'DELETE').catch(() => {});
+          },
+        );
+
+      trackingDiscoveryChannelRef.current = discoveryChannel;
+      discoveryChannel.subscribe();
+    }
+
+    resolveTrackingBooking().catch(() => {});
+    discoveryInterval = setInterval(() => {
+      resolveTrackingBooking().catch(() => {});
+    }, 8000);
+
+    return () => {
+      isMounted = false;
+      if (discoveryInterval) {
+        clearInterval(discoveryInterval);
+      }
+
+      const currentDiscoveryChannel = trackingDiscoveryChannelRef.current;
+      trackingDiscoveryChannelRef.current = null;
+
+      if (currentDiscoveryChannel) {
+        supabase.removeChannel(currentDiscoveryChannel);
+      }
+    };
+  }, [bookings]);
+
+  useEffect(() => {
     customerCoordsRef.current = null;
+    trackingArrivedRef.current = false;
     hasRequestedCustomerLocationRef.current = false;
     trackingLocationCacheRef.current = { signature: '', label: null };
     trackingLocationRequestRef.current = 0;
     setTrackingDistance(null);
     setTrackingLocationLabel(null);
 
-    if (!activeBooking?.id) {
+    if (!selectedTrackingBooking?.id) {
       setShowTrackingPopup(false);
     }
-  }, [activeBooking?.id]);
+  }, [selectedTrackingBooking?.id]);
 
   const resolveCustomerCoordinates = useCallback(async () => {
     if (customerCoordsRef.current) {
@@ -384,18 +610,18 @@ const HomeBottomNav = () => {
     }
 
     if (
-      Number.isFinite(activeBooking?.customerLat)
-      && Number.isFinite(activeBooking?.customerLng)
+      Number.isFinite(selectedTrackingBooking?.customerLat)
+      && Number.isFinite(selectedTrackingBooking?.customerLng)
     ) {
       customerCoordsRef.current = {
-        latitude: activeBooking.customerLat,
-        longitude: activeBooking.customerLng,
+        latitude: selectedTrackingBooking.customerLat,
+        longitude: selectedTrackingBooking.customerLng,
       };
       return customerCoordsRef.current;
     }
 
     return null;
-  }, [activeBooking?.customerLat, activeBooking?.customerLng]);
+  }, [selectedTrackingBooking?.customerLat, selectedTrackingBooking?.customerLng]);
 
   const updateTrackingDistance = useCallback(async (record) => {
     const technicianCoords = parseTrackingCoordinates(record);
@@ -417,7 +643,7 @@ const HomeBottomNav = () => {
   }, [resolveCustomerCoordinates]);
 
   const updateTrackingLocationLabel = useCallback(async (record) => {
-    const bookingId = String(activeBooking?.id || '').trim();
+    const bookingId = String(selectedTrackingBooking?.id || '').trim();
     const technicianCoords = parseTrackingCoordinates(record);
 
     if (!bookingId || !technicianCoords) {
@@ -463,17 +689,25 @@ const HomeBottomNav = () => {
       label: nextLabel,
     };
     setTrackingLocationLabel(nextLabel);
-  }, [activeBooking?.id]);
+  }, [selectedTrackingBooking?.id]);
 
   useEffect(() => {
     let isMounted = true;
-    const bookingId = String(activeBooking?.id || '').trim();
+    const bookingId = String(selectedTrackingBooking?.id || '').trim();
+    let arrivalCheckInterval = null;
 
     const clearTrackingUi = () => {
       customerCoordsRef.current = null;
       setShowTrackingPopup(false);
       setTrackingDistance(null);
       setTrackingLocationLabel(null);
+    };
+
+    const stopTrackingForArrival = () => {
+      trackingArrivedRef.current = true;
+      setTrackingBookingId(null);
+      clearTrackingUi();
+      syncBookingsFromRemote().catch(() => {});
     };
 
     if (!bookingId || !shouldShowTrackingPopup) {
@@ -495,7 +729,7 @@ const HomeBottomNav = () => {
     }
 
     const handleTrackingUpdate = async (record) => {
-      if (!isMounted) {
+      if (!isMounted || trackingArrivedRef.current) {
         return;
       }
 
@@ -508,6 +742,29 @@ const HomeBottomNav = () => {
     };
 
     const subscribeToTracking = async () => {
+      const fetchLatestArrivalStatus = async () => {
+        const latestStatusResult = await supabase.db.select('booking_status_history', {
+          columns: 'status,created_at',
+          filters: [{ column: 'booking_id', op: 'eq', value: bookingId }],
+          order: [{ column: 'created_at', ascending: false }],
+          maybeSingle: true,
+        });
+
+        if (!isMounted) {
+          return { shouldClose: false };
+        }
+
+        const shouldClose = TRACKING_POPUP_CLOSE_STATUSES.has(
+          normalizeStatus(latestStatusResult.data?.status),
+        );
+
+        if (shouldClose) {
+          stopTrackingForArrival();
+        }
+
+        return { shouldClose };
+      };
+
       const existingChannel = trackingChannelRef.current;
       const existingStatusChannel = trackingStatusChannelRef.current;
 
@@ -535,7 +792,7 @@ const HomeBottomNav = () => {
             }
 
             if (TRACKING_POPUP_CLOSE_STATUSES.has(normalizeStatus(payload.new?.status))) {
-              clearTrackingUi();
+              stopTrackingForArrival();
             }
           },
         );
@@ -543,21 +800,14 @@ const HomeBottomNav = () => {
       trackingStatusChannelRef.current = statusChannel;
       statusChannel.subscribe();
 
-      const latestStatusResult = await supabase.db.select('booking_status_history', {
-        columns: 'status,created_at',
-        filters: [{ column: 'booking_id', op: 'eq', value: bookingId }],
-        order: [{ column: 'created_at', ascending: false }],
-        maybeSingle: true,
-      });
-
-      if (!isMounted) {
+      const initialStatusCheck = await fetchLatestArrivalStatus();
+      if (!isMounted || initialStatusCheck.shouldClose) {
         return;
       }
 
-      if (TRACKING_POPUP_CLOSE_STATUSES.has(normalizeStatus(latestStatusResult.data?.status))) {
-        clearTrackingUi();
-        return;
-      }
+      arrivalCheckInterval = setInterval(() => {
+        fetchLatestArrivalStatus().catch(() => {});
+      }, 5000);
 
       const channel = supabase
         .channel(`technician-live-tracking:${bookingId}`)
@@ -614,6 +864,11 @@ const HomeBottomNav = () => {
         return;
       }
 
+      if (trackingArrivedRef.current) {
+        clearTrackingUi();
+        return;
+      }
+
       if (existingTrackingResult.data) {
         await handleTrackingUpdate(existingTrackingResult.data);
         return;
@@ -626,6 +881,9 @@ const HomeBottomNav = () => {
 
     return () => {
       isMounted = false;
+      if (arrivalCheckInterval) {
+        clearInterval(arrivalCheckInterval);
+      }
 
       const existingChannel = trackingChannelRef.current;
       trackingChannelRef.current = null;
@@ -641,7 +899,7 @@ const HomeBottomNav = () => {
       }
     };
   }, [
-    activeBooking?.id,
+    selectedTrackingBooking?.id,
     shouldShowTrackingPopup,
     updateTrackingDistance,
     updateTrackingLocationLabel,
